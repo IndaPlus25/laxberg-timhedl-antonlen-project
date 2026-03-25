@@ -66,7 +66,7 @@ pub fn file_parse_interface(filename: &str){
     let result = parse_obj_file(filename);
 }
 
-fn parse_obj_file(filename: &str) -> io::Result<()> {
+fn parse_obj_file(filename: &str) -> io::Result<Vec<Mesh>> {
     let path = Path::new(filename);
     let file = File::open(&path)?;
     let reader = BufReader::new(file);
@@ -97,12 +97,15 @@ fn parse_obj_file(filename: &str) -> io::Result<()> {
                 }
             },
             x if x.starts_with("o ") => {
+                let name = x[2..].to_string();
+                objects.push(Mesh {name, vertices, faces,});
 
+                (vertices, faces) = (vec![], vec![]);
             },
             _ => {},
         }
 
     }
 
-    Ok(())
+    Ok(objects)
 }
