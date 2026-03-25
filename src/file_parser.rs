@@ -63,7 +63,7 @@ pub fn file_parse_interface(filename: &str) -> Option<Vec<Mesh>> {
         return None;
     }
 
-    match parse_obj_file("bugatti/bugatti.obj") { 
+    match parse_obj_file(filename) { 
         Ok(mesh) => {
             println!("Successful mesh"); // PLACEHOLDER ERROR
             return Some(mesh);
