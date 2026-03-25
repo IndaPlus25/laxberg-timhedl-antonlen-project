@@ -21,9 +21,9 @@ impl Vertix {
 }
 
 pub struct Face {
-    v1: usize,
-    v2: usize,
-    v3: usize,
+    pub v1: usize,
+    pub v2: usize,
+    pub v3: usize,
 }
 
 impl Face {
