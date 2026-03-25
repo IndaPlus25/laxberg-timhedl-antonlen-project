@@ -39,7 +39,7 @@ An issue ***should not*** be created for:
 
 > To select multiple lines, click the first line and shift click the last
 
-<img src="./create-issue-from-code.png" height="250"\>
+![](./create-issue-from-code.png)
 ### 3.2 Create issues without code reference
 1. Open the issues tab
 2. Click create new issue
@@ -58,7 +58,7 @@ When resolving an issue, separate branch should be created. Given an issue `#3 s
 
 > This makes it so the issue is automatically closed when the issue branch is merged
 
-<img src="./create-a-branch.png" height="250"\>
+![](./create-a-branch.png)
 
 When the issue is resolved, create a pull request to merge it into the development branch
 
