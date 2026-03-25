@@ -58,6 +58,25 @@ pub struct Mesh {
     pub faces: Vec<Face>,
 }
 
+trait FileFormat{
+    fn parse_vertices(coordinates: &str) -> Option<Vertix>;
+
+    fn parse_faces(vertices: &str)  -> Option<Vec<Face>>;
+} 
+
+struct ObjParser;
+
+impl FileFormat for ObjParser {
+    fn parse_vertices(coordinates: &str) -> Option<Vertix> {
+        todo!()
+    }
+
+    fn parse_faces(vertices: &str)  -> Option<Vec<Face>> {
+        todo!()   
+    }
+
+}
+
 pub fn file_parse_interface(filename: &str) -> Option<Vec<Mesh>> {
     if !filename.ends_with(".obj"){
         return None;
