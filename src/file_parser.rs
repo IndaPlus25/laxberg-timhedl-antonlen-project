@@ -58,12 +58,21 @@ pub struct Mesh {
     faces: Vec<Face>,
 }
 
-pub fn file_parse_interface(filename: &str){
+pub fn file_parse_interface(filename: &str) -> Option<Vec<Mesh>> {
     if !filename.ends_with(".obj"){
-        return;
+        return None;
     }
 
-    let result = parse_obj_file(filename);
+    match parse_obj_file("bugatti/bugatti.obj") { 
+        Ok(mesh) => {
+            println!("Successful mesh"); // PLACEHOLDER ERROR
+            return Some(mesh);
+        }
+        Err(_) => {
+            println!("not successful mesh"); // PLACEHOLDER ERROR
+            return None;
+        }
+    }
 }
 
 fn parse_obj_file(filename: &str) -> io::Result<Vec<Mesh>> {
