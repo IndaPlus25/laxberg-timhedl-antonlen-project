@@ -10,7 +10,7 @@ If a function has a return type and can only fail in one way, **an** option is u
 
 ## Naming convention
 
-A commit should always be prefaced with **an** indicator that **allows** easy **identification** of what type of commit it is. The indicator should be followed by a *":"* and then a short **title** that explains what the commit does. 
+A commit should always be prefaced with **an** indicator that **allows** easy **identification** of what type of commit it is. The indicator should be followed by a *": "* and then a short **title** that explains what the commit does. 
 
 | Prefix | Indication |
 | - | - |
