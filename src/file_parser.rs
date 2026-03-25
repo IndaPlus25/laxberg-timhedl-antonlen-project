@@ -53,9 +53,9 @@ impl Face {
 }
 
 pub struct Mesh {
-    name: String,
-    vertices: Vec<Vertix>,
-    faces: Vec<Face>,
+    pub name: String,
+    pub vertices: Vec<Vertix>,
+    pub faces: Vec<Face>,
 }
 
 pub fn file_parse_interface(filename: &str) -> Option<Vec<Mesh>> {
