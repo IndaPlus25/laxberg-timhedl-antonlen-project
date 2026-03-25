@@ -8,6 +8,18 @@ pub struct Vertix{
     z: f32,
 }
 
+impl Vertix {
+    fn parse(coordinates: &str) -> Option<Vertix> {
+        let mut parts = coordinates.split_whitespace();
+
+        let x = parts.next()?.parse::<f32>().ok()?;
+        let y = parts.next()?.parse::<f32>().ok()?;
+        let z = parts.next()?.parse::<f32>().ok()?;
+
+        Some(Vertix { x, y, z })
+    }
+}
+
 pub struct Face {
     v1: usize,
     v2: usize,
@@ -24,7 +36,6 @@ pub fn file_parse_interface(filename: &str){
     if !filename.ends_with(".obj"){
         return;
     }
-
 
     let result = parse_obj_file(filename);
 }
@@ -47,7 +58,12 @@ fn parse_obj_file(filename: &str) -> io::Result<()> {
 
             },
             x if x.starts_with("v ") => {
+                let coordinates = x[2..].trim();
 
+                match Vertix::parse(coordinates) {
+                    Some(v) => vertices.push(v),
+                    None => {println!("Error: corrupted parse")} // PLACEHOLDER ERROR
+                }
             },
             x if x.starts_with("o ") => {
 
