@@ -2,21 +2,20 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, Error, ErrorKind};
 use std::path::{Path};
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq, Debug)]
 pub struct Vertex{
     pub x: f32,
     pub y: f32,
     pub z: f32,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq, Debug)]
 pub struct Face {
     pub v1: usize,
     pub v2: usize,
     pub v3: usize,
 }
 
-#[derive(Debug, PartialEq)]
 pub struct Mesh {
     pub name: String,
     pub vertices: Vec<Vertex>,
@@ -24,34 +23,52 @@ pub struct Mesh {
 }
 
 trait FileFormat{
-    fn handle_input(&self, reader: &mut BufReader<File>) -> Vec<Mesh>;
+    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Vec<Mesh>;
 
-    fn parse_line(&self, line_result: Result<String, Error>, vertices: &mut Vec<Vertex>, faces: &mut Vec<Face>, objects: &mut Vec<Mesh>) -> io::Result<()>; 
+    fn parse_line(&mut self, line_result: Result<String, Error>) -> io::Result<()>; 
 
     fn parse_vertices(&self, coordinates: &str) -> Option<Vertex>;
 
     fn parse_faces(&self, vertices: &str)  -> Option<Vec<Face>>;
 } 
 
-struct ObjParser;
+struct ObjParser{
+    vertices: Vec<Vertex>,
+    faces: Vec<Face>,
+    objects: Vec<Mesh>,
+    previous_name: String,
+}
+
+impl ObjParser {
+    pub fn new() -> Self {
+        Self {
+            vertices: vec![],
+            faces: vec![],
+            objects: vec![],
+            previous_name: String::from(""),
+        }
+    }
+}
 
 impl FileFormat for ObjParser { 
-    fn handle_input(&self, reader: &mut BufReader<File>) -> Vec<Mesh> {
-        let mut vertices: Vec<Vertex> = vec![]; 
-        let mut faces: Vec<Face> = vec![];
-        let mut objects: Vec<Mesh> = vec![];
-
+    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Vec<Mesh> {
         for line_result in reader.lines(){
-            match self.parse_line(line_result, &mut vertices, &mut faces, &mut objects) {
+            match self.parse_line(line_result) {
                 Ok(_) => {},
                 Err(e) => {eprintln!("{}", e)}
             }
-        }
+        }  
 
-        objects
+        self.objects.push(Mesh {
+            name: self.previous_name.clone(), 
+            vertices: std::mem::take(&mut self.vertices), 
+            faces: std::mem::take(&mut self.faces),
+        });
+
+        std::mem::take(&mut self.objects)
     }
 
-    fn parse_line(&self, line_result: Result<String, Error>, vertices: &mut Vec<Vertex>, faces: &mut Vec<Face>, objects: &mut Vec<Mesh>) -> io::Result<()> {
+    fn parse_line(&mut self, line_result: Result<String, Error>) -> io::Result<()> {
         let line = line_result?;
         let trimmed_line = line.trim();
 
@@ -60,7 +77,7 @@ impl FileFormat for ObjParser {
                 let raw_vertices = x[2..].trim();
 
                 match self.parse_faces(raw_vertices) {
-                    Some(mut f) => faces.append(&mut f),
+                    Some(mut f) => self.faces.append(&mut f),
                     None => {
                         return Err(Error::new(
                         ErrorKind::Other, 
@@ -72,7 +89,7 @@ impl FileFormat for ObjParser {
                 let coordinates = x[2..].trim();
 
                 match self.parse_vertices(coordinates) {
-                    Some(v) => vertices.push(v),
+                    Some(v) => self.vertices.push(v),
                     None => {
                         return Err(Error::new(
                         ErrorKind::Other, 
@@ -80,14 +97,18 @@ impl FileFormat for ObjParser {
                     ));} // PLACEHOLDER ERROR
                 }
             },
-            x if x.starts_with("o ") => {
-                let name = x[2..].to_string();
-                objects.push(Mesh {
-                    name, 
-                    vertices: std::mem::take(vertices), 
-                    faces: std::mem::take(faces),
+            x if x.starts_with("o ") && self.previous_name != "".to_string() => {
+                self.objects.push(Mesh {
+                    name: self.previous_name.clone(), 
+                    vertices: std::mem::take(&mut self.vertices), 
+                    faces: std::mem::take(&mut self.faces),
                 });
+
+                self.previous_name = x[2..].to_string();
             },
+            x if x.starts_with("o ") && self.previous_name == "".to_string() => {
+                self.previous_name = x[2..].to_string();
+            }
             _ => {},
         }
 
@@ -137,7 +158,7 @@ fn get_file_format(path: &Path) -> Option<Box<dyn FileFormat>>{
     
     match extension.as_deref() {
         Some("obj") => {
-            Some(Box::new(ObjParser))
+            Some(Box::new(ObjParser::new()))
         },
         _ => {None},
     }
@@ -148,7 +169,7 @@ fn parse_file(filename: &str) -> io::Result<Vec<Mesh>> {
     let file = File::open(&path)?;
     let mut reader = BufReader::new(file);
 
-    let formatter = match get_file_format(path) {
+    let mut formatter = match get_file_format(path) {
         Some(f) => {f},
         None => {      
             return Err(Error::new(
