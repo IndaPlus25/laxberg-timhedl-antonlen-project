@@ -53,4 +53,24 @@ Reality broken! - If we have more time
 
 ## Work deligation
 
-TBD
+- Minimum viable product
+  - Be able to interpret a OBJ file or other 3D file type
+    
+    Anton
+  - Be able to load the interpreted file into the renderer
+    
+    Lucas
+  - Be able to display voxels in different colors
+  
+    Tim
+    
+- Should have - TBD
+
+- Nice to have - TBD
+
+- A finished project - TBD
+
+- This would break reality - TBD
+
+- Reality broken! - TBD
+
