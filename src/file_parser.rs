@@ -1,23 +1,11 @@
 use std::fs::File;
-use std::io::{self, BufRead, BufReader};
-use std::path::Path;
+use std::io::{self, BufRead, BufReader, Error, ErrorKind};
+use std::path::{Path};
 
 pub struct Vertix{
     pub x: f32,
     pub y: f32,
     pub z: f32,
-}
-
-impl Vertix {
-    fn parse(coordinates: &str) -> Option<Vertix> {
-        let mut parts = coordinates.split_whitespace();
-
-        let x = parts.next()?.parse::<f32>().ok()?;
-        let y = parts.next()?.parse::<f32>().ok()?;
-        let z = parts.next()?.parse::<f32>().ok()?;
-
-        Some(Vertix { x, y, z })
-    }
 }
 
 pub struct Face {
@@ -26,8 +14,32 @@ pub struct Face {
     pub v3: usize,
 }
 
-impl Face {
-    fn parse(vertices: &str)  -> Option<Vec<Face>> {
+pub struct Mesh {
+    pub name: String,
+    pub vertices: Vec<Vertix>,
+    pub faces: Vec<Face>,
+}
+
+trait FileFormat{
+    fn parse_vertices(&self, coordinates: &str) -> Option<Vertix>;
+
+    fn parse_faces(&self, vertices: &str)  -> Option<Vec<Face>>;
+} 
+
+struct ObjParser;
+
+impl FileFormat for ObjParser {
+    fn parse_vertices(&self, coordinates: &str) -> Option<Vertix> {
+        let mut parts = coordinates.split_whitespace();
+
+        let x = parts.next()?.parse::<f32>().ok()?;
+        let y = parts.next()?.parse::<f32>().ok()?;
+        let z = parts.next()?.parse::<f32>().ok()?;
+
+        Some(Vertix { x, y, z })
+    }
+
+    fn parse_faces(&self, vertices: &str)  -> Option<Vec<Face>> {
         let mut parts = vertices.split_whitespace();
 
         let a = parts.next()?.split('/').next()?.parse::<usize>().ok()? - 1;
@@ -50,31 +62,74 @@ impl Face {
             Face {v1: a, v2: b, v3: c}
         ])
     }
+
 }
 
-pub struct Mesh {
-    pub name: String,
-    pub vertices: Vec<Vertix>,
-    pub faces: Vec<Face>,
+fn get_file_format(path: &Path) -> Option<Box<dyn FileFormat>>{
+    let extension = path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext|ext.to_lowercase());
+    
+    match extension.as_deref() {
+        Some("obj") => {
+            Some(Box::new(ObjParser))
+        },
+        _ => {None},
+    }
 }
 
-trait FileFormat{
-    fn parse_vertices(coordinates: &str) -> Option<Vertix>;
+fn parse_obj_file(filename: &str) -> io::Result<Vec<Mesh>> {
+    let path = Path::new(filename);
+    let file = File::open(&path)?;
+    let reader = BufReader::new(file);
 
-    fn parse_faces(vertices: &str)  -> Option<Vec<Face>>;
-} 
+    let formatter = match get_file_format(path) {
+        Some(f) => {f},
+        None => {      
+            return Err(Error::new(
+                ErrorKind::Other, 
+                "Placeholder: Unsupported file format!"
+            ));
+        }  
+    };
 
-struct ObjParser;
+    let mut vertices: Vec<Vertix> = vec![]; 
+    let mut faces: Vec<Face> = vec![];
+    let mut objects: Vec<Mesh> = vec![];
 
-impl FileFormat for ObjParser {
-    fn parse_vertices(coordinates: &str) -> Option<Vertix> {
-        todo!()
+    for line_result in reader.lines(){
+        let line = line_result?;
+        let trimmed_line = line.trim();
+
+        match trimmed_line.to_lowercase() {
+            x if x.starts_with("f ") => {
+                let raw_vertices = x[2..].trim();
+
+                match formatter.parse_faces(raw_vertices) {
+                    Some(mut f) => faces.append(&mut f),
+                    None => {println!("Error: corrupted parse")} // PLACEHOLDER ERROR
+                }
+            },
+            x if x.starts_with("v ") => {
+                let coordinates = x[2..].trim();
+
+                match formatter.parse_vertices(coordinates) {
+                    Some(v) => vertices.push(v),
+                    None => {println!("Error: corrupted parse")} // PLACEHOLDER ERROR
+                }
+            },
+            x if x.starts_with("o ") => {
+                let name = x[2..].to_string();
+                objects.push(Mesh {name, vertices, faces,});
+
+                (vertices, faces) = (vec![], vec![]);
+            },
+            _ => {},
+        }
+
     }
 
-    fn parse_faces(vertices: &str)  -> Option<Vec<Face>> {
-        todo!()   
-    }
-
+    Ok(objects)
 }
 
 pub fn file_parse_interface(filename: &str) -> Option<Vec<Mesh>> {
@@ -92,48 +147,4 @@ pub fn file_parse_interface(filename: &str) -> Option<Vec<Mesh>> {
             return None;
         }
     }
-}
-
-fn parse_obj_file(filename: &str) -> io::Result<Vec<Mesh>> {
-    let path = Path::new(filename);
-    let file = File::open(&path)?;
-    let reader = BufReader::new(file);
-
-    let mut vertices: Vec<Vertix> = vec![]; 
-    let mut faces: Vec<Face> = vec![];
-    let mut objects: Vec<Mesh> = vec![];
-
-    for line_result in reader.lines(){
-        let line = line_result?;
-        let trimmed_line = line.trim();
-
-        match trimmed_line.to_lowercase() {
-            x if x.starts_with("f ") => {
-                let raw_vertices = x[2..].trim();
-
-                match Face::parse(raw_vertices) {
-                    Some(mut f) => faces.append(&mut f),
-                    None => {println!("Error: corrupted parse")} // PLACEHOLDER ERROR
-                }
-            },
-            x if x.starts_with("v ") => {
-                let coordinates = x[2..].trim();
-
-                match Vertix::parse(coordinates) {
-                    Some(v) => vertices.push(v),
-                    None => {println!("Error: corrupted parse")} // PLACEHOLDER ERROR
-                }
-            },
-            x if x.starts_with("o ") => {
-                let name = x[2..].to_string();
-                objects.push(Mesh {name, vertices, faces,});
-
-                (vertices, faces) = (vec![], vec![]);
-            },
-            _ => {},
-        }
-
-    }
-
-    Ok(objects)
 }
