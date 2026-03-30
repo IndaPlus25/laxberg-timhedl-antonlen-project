@@ -24,7 +24,7 @@ pub struct Mesh {
 }
 
 trait FileFormat{
-    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Vec<Mesh>;
+    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Result<Vec<Mesh>, Error>;
 
     fn parse_line(&mut self, line_result: Result<String, Error>) -> io::Result<()>; 
 
@@ -84,11 +84,11 @@ impl ObjParser {
 }
 
 impl FileFormat for ObjParser { 
-    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Vec<Mesh> {
-        for line_result in reader.lines(){
+    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Result<Vec<Mesh>, Error> {
+        for (i, line_result) in reader.lines().enumerate(){
             match self.parse_line(line_result) {
                 Ok(_) => {},
-                Err(e) => {eprintln!("{}", e)}
+                Err(e) => {return Err(Error::new(e.kind(), format!("{}, failed on line {}", e, i)));}
             }
         }  
 
@@ -98,7 +98,7 @@ impl FileFormat for ObjParser {
             faces: std::mem::take(&mut self.faces),
         });
 
-        std::mem::take(&mut self.objects)
+        Ok(std::mem::take(&mut self.objects))
     }
 
     fn parse_line(&mut self, line_result: Result<String, Error>) -> Result<(), Error> {
@@ -221,25 +221,20 @@ fn parse_file(filename: &str) -> Result<Vec<Mesh>, Error> {
                 ErrorKind::Other, 
                 "Placeholder: Unsupported file format!"
             ));
-        }  
+        },
     };
 
-    let objects = formatter.handle_input(&mut reader);
+    let objects = match formatter.handle_input(&mut reader){
+        Ok(object) => {object},
+        Err(e) => {return Err(e);}
+    };
+
     Ok(objects)
 
 }
-
-pub fn file_parse_interface(filename: &str) -> Option<Vec<Mesh>> {
-    match parse_file(filename) { 
-        Ok(mesh) => {
-            println!("Successful mesh"); // PLACEHOLDER ERROR
-            return Some(mesh);
-        }
-        Err(_) => {
-            println!("not successful mesh"); // PLACEHOLDER ERROR
-            return None;
-        }
-    }
+ 
+pub fn file_parse_interface(filename: &str) -> Result<Vec<Mesh>, Error> {
+    parse_file(filename)
 }
 
 #[cfg(test)]
@@ -250,7 +245,7 @@ mod tests {
         let filename = "test-resources/file-parsing/bugatti.obj";
         let mut object_names = vec![];
 
-        if let Some(mesh) = file_parse_interface(filename){        
+        if let Ok(mesh) = file_parse_interface(filename){        
             for object in mesh{
                 object_names.push(object.name);
             }
@@ -266,7 +261,7 @@ mod tests {
         let filename = "test-resources/file-parsing/bugatti.obj";
         let mut object_verticies = vec![];
 
-        if let Some(mesh) = file_parse_interface(filename){        
+        if let Ok(mesh) = file_parse_interface(filename){        
             for mut object in mesh{
                 object_verticies.append(&mut object.vertices);
             }
@@ -330,7 +325,7 @@ mod tests {
         let filename = "test-resources/file-parsing/bugatti.obj";
         let mut object_faces = vec![];
 
-        if let Some(mesh) = file_parse_interface(filename){        
+        if let Ok(mesh) = file_parse_interface(filename){        
             for mut object in mesh{
                 object_faces.append(&mut object.faces);
             }
@@ -390,7 +385,7 @@ mod tests {
         let filename = "test-resources/file-parsing/bugatti.obj";
         let mut objects = vec![];
 
-        if let Some(mesh) = file_parse_interface(filename){        
+        if let Ok(mesh) = file_parse_interface(filename){        
             objects = mesh
         }      
 
