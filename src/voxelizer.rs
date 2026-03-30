@@ -92,4 +92,43 @@ mod tests {
         
         assert!(verticies_in_cube(vertecies, center, width))
     }
+
+    #[test]
+    fn all_vertecies_outside_singular_face_plane_return_true() {
+        let vertecies = [
+            [1.6, 1.6, -1.6],
+            [2.5, 2.5, 2.5],
+            [3.4, -3.4, 3.4]
+        ];
+        let center = [0.5, 0.5, 0.5];
+        let width = 0.5;
+        
+        assert!(vertecies_on_same_side(vertecies, center, width))
+    }
+
+    #[test]
+    fn all_vertecies_outside_multiple_face_planes_return_true() {
+        let vertecies = [
+            [1.6, 1.6, -1.6],
+            [2.5, 2.5, 2.5],
+            [3.4, 3.4, 3.4]
+        ];
+        let center = [0.5, 0.5, 0.5];
+        let width = 0.5;
+        
+        assert!(vertecies_on_same_side(vertecies, center, width))
+    }
+
+    #[test]
+    fn not_all_vertecies_outside_singular_face_planes_return_false() {
+        let vertecies = [
+            [-1.6, 1.6, -1.6],
+            [2.5, -2.5, 2.5],
+            [3.4, 3.4, 3.4]
+        ];
+        let center = [0.5, 0.5, 0.5];
+        let width = 0.5;
+        
+        assert_eq!(vertecies_on_same_side(vertecies, center, width), false)
+    }
 }
