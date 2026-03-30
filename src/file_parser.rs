@@ -28,9 +28,9 @@ trait FileFormat{
 
     fn parse_line(&mut self, line_result: Result<String, Error>) -> io::Result<()>; 
 
-    fn parse_vertices(&self, coordinates: &str) -> Option<Vertex>;
+    fn parse_vertices(&self, coordinates: &str) -> Result<Vertex, Error>;
 
-    fn parse_faces(&self, vertices: &str)  -> Option<Vec<Face>>;
+    fn parse_faces(&self, vertices: &str)  -> Result<Vec<Face>, Error> ;
 } 
 
 struct ObjParser{
@@ -41,13 +41,45 @@ struct ObjParser{
 }
 
 impl ObjParser {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             vertices: vec![],
             faces: vec![],
             objects: vec![],
             previous_name: String::from(""),
         }
+    }
+
+    fn parse_face_obj_format(part: Option<&str>) -> Result<usize, Error> {
+        let Some(point_data) = part else {
+            return Err(Error::new(ErrorKind::InvalidData, "Missing data"));
+        };
+
+        let Some(point_str) = point_data.split('/').next() else {
+            return Err(Error::new(ErrorKind::InvalidData, "Missing point"));
+        };
+
+        let Ok(parsed_point) = point_str.parse::<usize>() else {
+            return Err(Error::new(ErrorKind::InvalidData, format!("Parsing point failed, {} not valid input", point_str)))
+        };
+
+        let Some(point) = parsed_point.checked_sub(1) else {
+            return Err(Error::new(ErrorKind::InvalidData, format!("Point index is negative")))
+        };
+
+        Ok(point)
+    }
+
+    fn parse_vertex_obj_format(part: Option<&str>) -> Result<f32, Error> { 
+        let Some(coordinate_str) = part else {
+            return Err(Error::new(ErrorKind::InvalidData, "Missing coordinate"));
+        };
+
+        let Ok(coordinate) = coordinate_str.parse::<f32>() else {
+            return Err(Error::new(ErrorKind::InvalidData, format!("Parsing X coordinate failed, {} not valid input", coordinate_str)))
+        };
+
+        Ok(coordinate)
     }
 }
 
@@ -78,24 +110,20 @@ impl FileFormat for ObjParser {
                 let raw_vertices = x[2..].trim();
 
                 match self.parse_faces(raw_vertices) {
-                    Some(mut f) => self.faces.append(&mut f),
-                    None => {
-                        return Err(Error::new(
-                        ErrorKind::Other, 
-                        "Placeholder: Corrupted parse"
-                    ));} // PLACEHOLDER ERROR
+                    Ok(mut f) => self.faces.append(&mut f),
+                    Err(e) => {
+                        return Err(e);
+                    } // PLACEHOLDER ERROR
                 }
             },
             x if x.starts_with("v ") => {
                 let coordinates = x[2..].trim();
 
                 match self.parse_vertices(coordinates) {
-                    Some(v) => self.vertices.push(v),
-                    None => {
-                        return Err(Error::new(
-                        ErrorKind::Other, 
-                        "Placeholder: Corrupted parse"
-                    ));} // PLACEHOLDER ERROR
+                    Ok(v) => self.vertices.push(v),
+                    Err(e) => {
+                        return Err(e);
+                    } // PLACEHOLDER ERROR
                 }
             },
             x if x.starts_with("o ") && self.previous_name != "".to_string() => {
@@ -116,36 +144,56 @@ impl FileFormat for ObjParser {
         Ok(())
     }
 
-    fn parse_vertices(&self, coordinates: &str) -> Option<Vertex> {
+    fn parse_vertices(&self, coordinates: &str) -> Result<Vertex, Error> {
         let mut parts = coordinates.split_whitespace();
 
-        let x = parts.next()?.parse::<f32>().ok()?;
-        let y = parts.next()?.parse::<f32>().ok()?;
-        let z = parts.next()?.parse::<f32>().ok()?;
+        let x = match ObjParser::parse_vertex_obj_format(parts.next()) {
+            Ok(f) => {f}
+            Err(e) => {return Err(e);}
+        };
 
-        Some(Vertex { x, y, z })
+        let y = match ObjParser::parse_vertex_obj_format(parts.next()) {
+            Ok(f) => {f}
+            Err(e) => {return Err(e);}
+        };
+
+        let z = match ObjParser::parse_vertex_obj_format(parts.next()) {
+            Ok(f) => {f}
+            Err(e) => {return Err(e);}
+        };
+
+        Ok(Vertex { x, y, z })
     }
 
-    fn parse_faces(&self, vertices: &str)  -> Option<Vec<Face>> {
+    fn parse_faces(&self, vertices: &str)  -> Result<Vec<Face>, Error> {
         let mut parts = vertices.split_whitespace();
 
-        let a = parts.next()?.split('/').next()?.parse::<usize>().ok()? - 1;
-        let b = parts.next()?.split('/').next()?.parse::<usize>().ok()? - 1;
-        let c = parts.next()?.split('/').next()?.parse::<usize>().ok()? - 1;
+        let a = match ObjParser::parse_face_obj_format(parts.next()) {
+            Ok(u) => {u}
+            Err(e) => {return Err(e);}
+        };
 
-        let d_option = parts.next()
-            .and_then(|s| s.split('/').next())
-            .and_then(|s| s.parse::<usize>().ok());
+        let b = match ObjParser::parse_face_obj_format(parts.next()) {
+            Ok(u) => {u}
+            Err(e) => {return Err(e);}
+        };
 
-        if let Some(d) = d_option{
-            let d = d - 1;
-            return Some(vec![
-                Face {v1: a, v2: b, v3: c},
-                Face {v1: a, v2: c, v3: d},   
-            ])
-        }
+        let c = match ObjParser::parse_face_obj_format(parts.next()) {
+            Ok(u) => {u}
+            Err(e) => {return Err(e);}
+        };
 
-        Some(vec![
+        match ObjParser::parse_face_obj_format(parts.next()) {
+            Ok(d) => {
+                return Ok(vec![
+                    Face {v1: a, v2: b, v3: c},
+                    Face {v1: a, v2: c, v3: d},   
+                ])
+            }
+            Err(_) => {}
+        };
+
+        Ok(vec![
             Face {v1: a, v2: b, v3: c}
         ])
     }
