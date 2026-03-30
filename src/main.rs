@@ -11,6 +11,18 @@ struct App {
     surface: Option<Surface<Rc<Window>, Rc<Window>>>,
 }
 
+//32x32x32 chunk
+struct Chunk {
+    //first 8 bits are bools for children existing in each of the 8 positions. Z-order curve
+    //sencond u bits are bools for if children are leaf nodes or are parents themselves.
+    //last 16 bits are primarily pointers to the first child of current node. If they are a leaf
+    //then they save the u8(u16) bit information about its material.
+    ///0xCC(child)LL(leaf)OOOO(first_child_pointer)
+    data: Vec![u32],
+}
+
+struct 
+
 fn main() {
     let event_loop = EventLoop::new().unwrap();
 
@@ -90,3 +102,6 @@ fn default_color(buffer: &mut [u32], width: u32, height: u32) {
         *pixel = (r << 16) | (g << 8) | b;
     }
 }
+
+
+
