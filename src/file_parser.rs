@@ -236,7 +236,12 @@ fn parse_file(filename: &str) -> Result<Vec<Mesh>, Error> {
     Ok(objects)
 
 }
- 
+
+/// The interface for the file parser. 
+/// 
+/// Input: Takes a &str that is the filename that is going to be parsed, need to contain the fileformat. 
+/// 
+/// Output: Gives a result, either Error to handle or a Vec of Meshes. One Mesh is one object in the obj file. A Mesh contains a list of faces and vertecies that descirbe the object.
 pub fn file_parse_interface(filename: &str) -> Result<Vec<Mesh>, Error> {
     parse_file(filename)
 }
