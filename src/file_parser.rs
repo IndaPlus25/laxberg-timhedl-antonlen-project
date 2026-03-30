@@ -101,7 +101,7 @@ impl FileFormat for ObjParser {
         std::mem::take(&mut self.objects)
     }
 
-    fn parse_line(&mut self, line_result: Result<String, Error>) -> io::Result<()> {
+    fn parse_line(&mut self, line_result: Result<String, Error>) -> Result<(), Error> {
         let line = line_result?;
         let trimmed_line = line.trim();
 
@@ -111,9 +111,7 @@ impl FileFormat for ObjParser {
 
                 match self.parse_faces(raw_vertices) {
                     Ok(mut f) => self.faces.append(&mut f),
-                    Err(e) => {
-                        return Err(e);
-                    } // PLACEHOLDER ERROR
+                    Err(e) => {return Err(e);} // PLACEHOLDER ERROR
                 }
             },
             x if x.starts_with("v ") => {
@@ -121,9 +119,7 @@ impl FileFormat for ObjParser {
 
                 match self.parse_vertices(coordinates) {
                     Ok(v) => self.vertices.push(v),
-                    Err(e) => {
-                        return Err(e);
-                    } // PLACEHOLDER ERROR
+                    Err(e) => {return Err(e);} // PLACEHOLDER ERROR
                 }
             },
             x if x.starts_with("o ") && self.previous_name != "".to_string() => {
@@ -213,7 +209,7 @@ fn get_file_format(path: &Path) -> Option<Box<dyn FileFormat>>{
     }
 }
 
-fn parse_file(filename: &str) -> io::Result<Vec<Mesh>> {
+fn parse_file(filename: &str) -> Result<Vec<Mesh>, Error> {
     let path = Path::new(filename);
     let file = File::open(&path)?;
     let mut reader = BufReader::new(file);
@@ -234,10 +230,6 @@ fn parse_file(filename: &str) -> io::Result<Vec<Mesh>> {
 }
 
 pub fn file_parse_interface(filename: &str) -> Option<Vec<Mesh>> {
-    if !filename.ends_with(".obj"){
-        return None;
-    }
-
     match parse_file(filename) { 
         Ok(mesh) => {
             println!("Successful mesh"); // PLACEHOLDER ERROR
