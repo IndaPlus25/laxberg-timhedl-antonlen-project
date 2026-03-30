@@ -32,7 +32,7 @@ fn verticies_in_cube(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width
     return false;
 }
 
-fn vertecies_on_same_side(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width: f32) -> bool {
+fn vertecies_outside_same_face(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width: f32) -> bool {
     let min_x = cube_center[0] - cube_width;
     let max_x = cube_center[0] + cube_width;
 
@@ -133,7 +133,7 @@ mod tests {
         let center = [0.5, 0.5, 0.5];
         let width = 0.5;
         
-        assert!(vertecies_on_same_side(vertecies, center, width))
+        assert!(vertecies_outside_same_face(vertecies, center, width))
     }
 
     #[test]
@@ -146,7 +146,7 @@ mod tests {
         let center = [0.5, 0.5, 0.5];
         let width = 0.5;
         
-        assert!(vertecies_on_same_side(vertecies, center, width))
+        assert!(vertecies_outside_same_face(vertecies, center, width))
     }
 
     #[test]
@@ -159,6 +159,6 @@ mod tests {
         let center = [0.5, 0.5, 0.5];
         let width = 0.5;
         
-        assert_eq!(vertecies_on_same_side(vertecies, center, width), false)
+        assert_eq!(vertecies_outside_same_face(vertecies, center, width), false)
     }
 }
