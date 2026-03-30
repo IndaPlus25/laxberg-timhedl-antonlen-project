@@ -1,4 +1,4 @@
-fn verticies_in_cube(vertecies: [f32; 3], cube_center: [f32; 3], cube_width: f32) -> bool {
+fn verticies_in_cube(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width: f32) -> bool {
     todo!();
 }
 
