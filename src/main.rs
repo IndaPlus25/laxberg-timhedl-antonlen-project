@@ -5,6 +5,7 @@ use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, DeviceId, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{CursorGrabMode, Window, WindowId};
+use vecmath
 
 struct App {
     window: Option<Rc<Window>>,
@@ -19,9 +20,25 @@ struct Chunk {
     //then they save the u8(u16) bit information about its material.
     ///0xCC(child)LL(leaf)OOOO(first_child_pointer)
     data: Vec![u32],
+    ///bottom, left, near corner position
+    position: Vector3,
 }
 
-struct 
+fn find_intersection(collision_pos: Vector3, direction_vec: Vector3, chunk: Chunk) {
+
+    //Use Parametric Octree Traversal
+
+    let local_collision = vec3_sub(collision_pos, chunk.position) //in chunk collision_pos
+    let inner_size = 16;
+
+    
+
+
+}
+
+fn vec_min(v1: V3, v2: V3) {
+    
+}
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();

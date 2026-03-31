@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 softbuffer = "0.4.8"
+vecmath = "1.0.0"
 winit = "0.30.13"
