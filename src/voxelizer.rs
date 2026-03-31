@@ -165,4 +165,43 @@ mod tests {
         
         assert_eq!(vertecies_outside_same_face(vertecies, center, width), false)
     }
+
+    #[test]
+    fn all_vertecies_outside_singular_edge_plane_return_true() {
+        let vertecies = [
+            [-2.0, 1.0, 1.5],
+            [-1.0, -1.0, 1.5],
+            [-2.5, 2.0, 0.0]
+        ];
+        let center = [0.0, 0.0, 0.0];
+        let width = 1.0;
+        
+        assert!(vertecies_outside_same_edge(vertecies, center, width))
+    }
+
+    #[test]
+    fn all_vertecies_outside_multiple_edge_planes_return_true() {
+        let vertecies = [
+            [-2.0, 1.0, 1.5],
+            [-1.0, 1.0, 1.5],
+            [-2.5, 3.0, 0.0]
+        ];
+        let center = [0.0, 0.0, 0.0];
+        let width = 1.0;
+        
+        assert!(vertecies_outside_same_edge(vertecies, center, width))
+    }
+
+    #[test]
+    fn not_all_vertecies_outside_singular_edge_planes_return_false() {
+        let vertecies = [
+            [2.0, -1.0, 1.5],
+            [1.0, -1.0, 1.5],
+            [-2.5, 3.0, 0.0]
+        ];
+        let center = [0.0, 0.0, 0.0];
+        let width = 1.0;
+        
+        assert_eq!(vertecies_outside_same_edge(vertecies, center, width), false)
+    }
 }
