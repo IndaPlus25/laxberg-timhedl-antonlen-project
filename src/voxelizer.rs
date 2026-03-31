@@ -136,7 +136,30 @@ fn vertecies_outside_same_edge(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], 
 }
 
 fn vertecies_outside_same_corner(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width: f32) -> bool {
-    todo!();
+    let threshold = 3.0  * cube_width;
+    
+    // Array of possible corner planes, element is true if all vertecies outside it
+    let mut outsides = [true; 8];
+
+    for vertex in vertecies {
+        let dx = vertex[0] - cube_center[0];
+        let dy = vertex[1] - cube_center[1];
+        let dz = vertex[2] - cube_center[2];
+
+        // Positive x
+        if dx + dy + dz <= threshold { outsides[0] = false; }
+        if dx + dy - dz <= threshold { outsides[1] = false; }
+        if dx - dy + dz <= threshold { outsides[2] = false; }
+        if dx - dy - dz <= threshold { outsides[3] = false; }
+
+        // Negative x
+        if -dx + dy + dz <= threshold { outsides[4] = false; }
+        if -dx + dy - dz <= threshold { outsides[5] = false; }
+        if -dx - dy + dz <= threshold { outsides[6] = false; }
+        if -dx - dy - dz <= threshold { outsides[7] = false; }
+    }
+
+    outsides.iter().any(|x| *x )
 }
 
 #[cfg(test)]
