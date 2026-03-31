@@ -273,4 +273,45 @@ mod tests {
         
         assert_eq!(vertecies_outside_same_edge(vertecies, center, width), false)
     }
+
+    #[test]
+    fn all_vertecies_outside_singular_corner_plane_return_true() {
+        let vertecies = [
+            [1.2, 1.2, 1.2],
+            [2.0, 0.5, 1.2],
+            [0.5, 2.0, 1.2],
+        ];
+
+        let center = [0.0, 0.0, 0.0];
+        let width = 1.0;
+        
+        assert!(vertecies_outside_same_corner(vertecies, center, width))
+    }
+
+    #[test]
+    fn all_vertecies_outside_multiple_corner_planes_return_true() {
+        let vertecies = [
+            [6.0, 0.5, 1.2],
+            [6.0, -0.5, 1.2],
+            [8.0, 0.0, 1.2],
+        ];
+
+        let center = [0.0, 0.0, 0.0];
+        let width = 1.0;
+        
+        assert!(vertecies_outside_same_corner(vertecies, center, width))
+    }
+
+    #[test]
+    fn not_all_vertecies_outside_singular_corner_plane_return_false() {
+        let vertecies = [
+            [3.0, 3.0, 3.0], 
+            [0.5, 0.5, 0.5], 
+            [0.0, 0.5, 0.5], 
+        ];
+        let center = [0.0, 0.0, 0.0];
+        let width = 1.0;
+        
+        assert_eq!(vertecies_outside_same_corner(vertecies, center, width), false)
+    }
 }
