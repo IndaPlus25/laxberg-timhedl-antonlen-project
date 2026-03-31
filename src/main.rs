@@ -5,11 +5,21 @@ use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, DeviceId, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{CursorGrabMode, Window, WindowId};
-use vecmath
 
 struct App {
     window: Option<Rc<Window>>,
     surface: Option<Surface<Rc<Window>, Rc<Window>>>,
+}
+
+struct V3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+struct Ray {
+    origin: V3,
+    direction: V3 //should be normalized
 }
 
 //32x32x32 chunk
@@ -24,14 +34,20 @@ struct Chunk {
     position: Vector3,
 }
 
-fn find_intersection(collision_pos: Vector3, direction_vec: Vector3, chunk: Chunk) {
+fn find_intersection(ray: Ray, chunk: Chunk) {
 
     //Use Parametric Octree Traversal
-
-    let local_collision = vec3_sub(collision_pos, chunk.position) //in chunk collision_pos
-    let inner_size = 16;
-
     
+    let parent: usize = 0; //root 
+
+    let entry_collision = vec3_sub(collision_pos, chunk.position) //in chunk collision_posa
+    
+    
+    let mid_collision = 
+    let exit_collision = 
+
+
+
 
 
 }
