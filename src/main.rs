@@ -60,23 +60,27 @@ fn find_intersection(ray: Ray, chunk: Chunk, current: u32) -> Option<Intersectio
 
     let mut direction_mask: u32 = 0;
     let mut pos_ray_dir: V3 = ray.direction;
+    let mut pos_ray_origin: V3 = ray.origin;
 
     if pos_ray_dir.x < 0.0 {
         direction_mask |= 1;
         pos_ray_dir.x = -pos_ray_dir.x;
+        pos_ray_origin.x = chunk.max_pos.x - (ray.origin.x - chunk.min_pos.x);
     }
     if pos_ray_dir.y < 0.0 {
         direction_mask |= 2;
         pos_ray_dir.y = -pos_ray_dir.y;
+        pos_ray_origin.y = chunk.max_pos.y - (ray.origin.y - chunk.min_pos.y);
     }
     if pos_ray_dir.z < 0.0 {
         direction_mask |= 4;
         pos_ray_dir.z = -pos_ray_dir.z;
+        pos_ray_origin.z = chunk.max_pos.z - (ray.origin.z - chunk.min_pos.z);
     }
     
 
-    let entry_collision = vec_div(&vec_sub(&chunk.min_pos, &ray.origin), &pos_ray_dir);
-    let exit_collision = vec_div(&vec_sub(&chunk.max_pos, &ray.origin), &pos_ray_dir);
+    let entry_collision = vec_div(&vec_sub(&chunk.min_pos, &pos_ray_origin), &pos_ray_dir);
+    let exit_collision = vec_div(&vec_sub(&chunk.max_pos, &pos_ray_origin), &pos_ray_dir);
 
 
     let t_min = entry_collision.x.max(entry_collision.y).max(entry_collision.z);
@@ -170,13 +174,13 @@ fn get_ending(data: u32) -> u32 {
 }
 
 fn is_leaf(data: u32, position: u32) -> bool {
-    let n = 1 << (position + 24);
+    let n = 1_u32 << (position + 16);
 
     (data & n) != 0
 }
 
 fn has_child(data: u32, position: u32) -> bool {
-    let n = 1 << (position + 16);
+    let n = 1_u32 << (position + 24);
 
     (data & n) != 0
 }
@@ -256,13 +260,11 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::Resized(size) => {
-                if let Some(surface) = &mut self.surface {
-                    if size.width > 0 && size.height > 0 {
-                        surface.resize(
-                            NonZeroU32::new(size.width).unwrap(),
-                            NonZeroU32::new(size.height).unwrap(),
-                        ).unwrap();
-                    }
+                if let Some(surface) = &mut self.surface && size.width > 0 && size.height > 0 {
+                    surface.resize(
+                        NonZeroU32::new(size.width).unwrap(),
+                        NonZeroU32::new(size.height).unwrap(),
+                    ).unwrap();
                 }
             }
             WindowEvent::RedrawRequested => {
@@ -298,5 +300,136 @@ fn default_color(buffer: &mut [u32], width: u32, height: u32) {
 
         // Format: 0000_RRRR_GGGG_BBBB
         *pixel = (r << 16) | (g << 8) | b;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vec_math() {
+        let v1 = V3 { x: 10.0, y: 20.0, z: 30.0 };
+        let v2 = V3 { x: 2.0, y: 4.0, z: 5.0 };
+
+        let added = vec_add(&v1, &v2);
+        assert_eq!((added.x, added.y, added.z), (12.0, 24.0, 35.0));
+
+        let subbed = vec_sub(&v1, &v2);
+        assert_eq!((subbed.x, subbed.y, subbed.z), (8.0, 16.0, 25.0));
+
+        let divided = vec_div(&v1, &v2);
+        assert_eq!((divided.x, divided.y, divided.z), (5.0, 5.0, 6.0));
+
+        let scaled = vec_mult_scal(&v1, 0.5);
+        assert_eq!((scaled.x, scaled.y, scaled.z), (5.0, 10.0, 15.0));
+    }
+
+    #[test]
+    fn test_entry_exit_planes() {
+        let entry_x_max = V3 { x: 10.0, y: 5.0, z: 2.0 };
+        assert_eq!(vec_entry_plane(&entry_x_max), 0); // YZ plane
+
+        let exit_z_min = V3 { x: 20.0, y: 15.0, z: 5.0 };
+        assert_eq!(vec_exit_plane(&exit_z_min), 2); // XY plane
+    }
+
+    #[test]
+    fn test_bitwise_packing() {
+        let mut test_state: u32 = 0;
+        
+        test_state |= 1 << 24;      // Child 0 exists
+        test_state |= 1 << 31;      // Child 7 exists
+        
+        test_state |= 1 << 16;      // Child 0 is a leaf
+        
+        let payload: u32 = 0xABCD;
+        test_state |= payload;      // Add the payload to the bottom 16 bits
+        
+        assert!(has_child(test_state, 0), "Failed to find Child 0 in CC byte");
+        assert!(has_child(test_state, 7), "Failed to find Child 7 in CC byte");
+        assert!(!has_child(test_state, 1), "Falsely found Child 1 in CC byte");
+        
+        assert!(is_leaf(test_state, 0), "Failed to identify Child 0 as a leaf in LL byte");
+        assert!(!is_leaf(test_state, 7), "Falsely identified Child 7 as a leaf in LL byte"); 
+        
+        assert_eq!(get_ending(test_state), 0xABCD, "Failed to extract OOOO payload");
+    }
+
+    #[test]
+    fn test_ray_misses_chunk_completely() {
+        let chunk = Chunk {
+            data: vec![],
+            min_pos: V3 { x: 0.0, y: 0.0, z: 0.0 },
+            max_pos: V3 { x: 32.0, y: 32.0, z: 32.0 },
+        };
+
+        let ray = Ray {
+            origin: V3 { x: 50.0, y: 50.0, z: 50.0 }, // Outside the chunk
+            direction: V3 { x: 1.0, y: 1.0, z: 1.0 }, // Pointing AWAY from the chunk
+        };
+
+        let result = find_intersection(ray, chunk, 0);
+        assert!(result.is_none(), "Ray should have missed the chunk completely");
+    }
+
+    #[test]
+    fn test_direct_hit_on_voxel_zero() {
+        //Child 0 exists, Child 0 is leaf, Payload is 0x9999
+        let mut root_node_data: u32 = 0;
+        root_node_data |= 1 << 24;    // Child 0 exists
+        root_node_data |= 1 << 16;    // Child 0 is leaf
+        root_node_data |= 0x9999;     // Payload
+
+        let chunk = Chunk {
+            data: vec![root_node_data],
+            min_pos: V3 { x: 0.0, y: 0.0, z: 0.0 },
+            max_pos: V3 { x: 32.0, y: 32.0, z: 32.0 },
+        };
+
+        // Ray starts slightly outside the chunk on the X axis, pointing straight through Voxel 0
+        let ray = Ray {
+            origin: V3 { x: -5.0, y: 8.0, z: 8.0 }, 
+            direction: V3 { x: 1.0, y: 0.0, z: 0.0 }, // Straight right
+        };
+
+        let result = find_intersection(ray, chunk, root_node_data);
+        
+        assert!(result.is_some(), "Ray should have hit voxel 0");
+        if let Some(intersect) = result {
+            // Check if it returned the correct payload (the lower 16 bits of our mock data)
+            assert_eq!(intersect.voxel_data, 0x9999, "Returned incorrect payload"); 
+        }
+    }
+
+    #[test]
+    fn test_negative_ray_reflection() {
+        // Build the root node data: Child 7 exists, Child 7 is leaf, Payload is 0x7777
+        let mut root_node_data: u32 = 0;
+        root_node_data |= 1_u32 << 31; // Child 7 exists 
+        root_node_data |= 1 << 23;     // Child 7 is leaf
+        root_node_data |= 0x7777;      // Payload
+
+        let chunk = Chunk {
+            data: vec![root_node_data],
+            min_pos: V3 { x: 0.0, y: 0.0, z: 0.0 },
+            max_pos: V3 { x: 32.0, y: 32.0, z: 32.0 },
+        };
+
+        // Ray starts outside the top-right-back corner, pointing straight backwards towards the origin
+        let ray = Ray {
+            origin: V3 { x: 40.0, y: 40.0, z: 40.0 }, 
+            // Negative directions! This will trigger your XOR mask logic.
+            direction: V3 { x: -0.577, y: -0.577, z: -0.577 }, 
+        };
+
+        let result = find_intersection(ray, chunk, root_node_data);
+        
+        // If the XOR mask logic fails, it will think the ray hit Voxel 0 and return None.
+        // If the XOR mask works, it will correctly translate the hit to Voxel 7.
+        assert!(result.is_some(), "Negative ray reflection failed to hit voxel 7");
+        if let Some(intersect) = result {
+            assert_eq!(intersect.voxel_data, 0x7777, "Hit the right voxel, but got the wrong data");
+        }
     }
 }
