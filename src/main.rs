@@ -140,9 +140,10 @@ fn proc_subtree(ray: &Ray, chunk: &Chunk, current: u32, entry: V3, exit: V3, dir
             let voxel_data = get_ending(current);
 
             if is_leaf(current, true_sub_voxel) {
-                return Some(IntersectionData { ray: *ray, voxel_data, });
+                return Some(IntersectionData { ray: *ray, voxel_data });
             } else {
-                let next = chunk.data[voxel_data as usize];
+
+                let next = chunk.data[voxel_data as usize + child_pop_count(current, true_sub_voxel) as usize];
 
                 let sub_entry = V3 {
                     x: if (current_sub_voxel & 1) != 0 { mid.x } else { entry.x },
@@ -199,6 +200,13 @@ fn has_child(data: u32, position: u32) -> bool {
     let n = 1_u32 << (position + 24);
 
     (data & n) != 0
+}
+
+fn child_pop_count(data: u32, true_sub_voxel: u32) -> u32 {
+    let child_byte = data >> 24;
+    let mask = (1 << true_sub_voxel) -1;
+    let bits_before = child_byte & mask;
+    bits_before.count_ones()
 }
 
 fn vec_add(v1: &V3, v2: &V3) -> V3 {
@@ -448,4 +456,54 @@ mod tests {
             assert_eq!(intersect.voxel_data, 0x7777, "Hit the right voxel, but got the wrong data");
         }
     }
+
+    #[test]
+    fn test_deep_voxel_traversal() {
+        // Target Voxel: (25, 6, 18)
+        // Depth: 5 levels (32 -> 16 -> 8 -> 4 -> 2 -> 1)
+        // L0 (32x32): Child 5 (Right, Bottom, Back)  -> Points to index 1
+        // L1 (16x16): Child 1 (Right, Bottom, Front) -> Points to index 2
+        // L2 (8x8):   Child 2 (Left,  Top,    Front) -> Points to index 3
+        // L3 (4x4):   Child 6 (Left,  Top,    Back)  -> Points to index 4
+        // L4 (2x2):   Child 1 (Right, Bottom, Front) -> LEAF! Payload 0xCAFE
+
+        let mut tree_data = vec![0_u32; 5];
+        
+        // Node 0: Child 5 exists, points to index 1
+        tree_data[0] = (1_u32 << (5 + 24)) | 1;
+        
+        // Node 1: Child 1 exists, points to index 2
+        tree_data[1] = (1_u32 << (1 + 24)) | 2;
+        
+        // Node 2: Child 2 exists, points to index 3
+        tree_data[2] = (1_u32 << (2 + 24)) | 3;
+        
+        // Node 3: Child 6 exists, points to index 4
+        tree_data[3] = (1_u32 << (6 + 24)) | 4;
+        
+        // Node 4: Child 1 exists, IS LEAF, contains payload 0xCAFE
+        tree_data[4] = (1_u32 << (1 + 24)) | (1_u32 << (1 + 16)) | 0xCAFE;
+
+        let chunk = Chunk {
+            data: tree_data,
+            min_pos: V3 { x: 0.0, y: 0.0, z: 0.0 },
+            max_pos: V3 { x: 32.0, y: 32.0, z: 32.0 },
+        };
+
+        // Ray starts outside at X=-1, aiming straight along +X into Y=6.5, Z=18.5
+        // We use 0.0001 for Y and Z to prevent Float NaN math (a standard engine edge-case fix)
+        let ray = Ray {
+            origin: V3 { x: -1.0, y: 6.5, z: 18.5 },
+            direction: V3 { x: 1.0, y: 0.0001, z: 0.0001 },
+        };
+
+        let result = find_intersection(&ray, &chunk, chunk.data[0]); // Start at index 0
+
+        assert!(result.is_some(), "Ray completely missed the deep voxel!");
+        if let Some(intersect) = result {
+            assert_eq!(intersect.voxel_data, 0xCAFE, "Hit the wrong voxel or extracted wrong data!");
+        }
+    }
+
+
 }
