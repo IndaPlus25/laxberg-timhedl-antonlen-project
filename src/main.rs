@@ -18,6 +18,7 @@ struct V3 {
     z: f32,
 }
 
+#[derive(Copy, Clone)]
 struct Ray {
     origin: V3,
     direction: V3 //should be normalized
@@ -56,7 +57,7 @@ fn main() {
 }
 
 ///None = no intersectin in chunk by ray, else IntersectionData
-fn find_intersection(ray: Ray, chunk: Chunk, current: u32) -> Option<IntersectionData> {
+fn find_intersection(ray: &Ray, chunk: &Chunk, current: u32) -> Option<IntersectionData> {
 
     let mut direction_mask: u32 = 0;
     let mut pos_ray_dir: V3 = ray.direction;
@@ -77,15 +78,12 @@ fn find_intersection(ray: Ray, chunk: Chunk, current: u32) -> Option<Intersectio
         pos_ray_dir.z = -pos_ray_dir.z;
         pos_ray_origin.z = chunk.max_pos.z - (ray.origin.z - chunk.min_pos.z);
     }
-    
 
-    let entry_collision = vec_div(&vec_sub(&chunk.min_pos, &pos_ray_origin), &pos_ray_dir);
-    let exit_collision = vec_div(&vec_sub(&chunk.max_pos, &pos_ray_origin), &pos_ray_dir);
+    let entry = vec_div(&vec_sub(&chunk.min_pos, &pos_ray_origin), &pos_ray_dir);
+    let exit = vec_div(&vec_sub(&chunk.max_pos, &pos_ray_origin), &pos_ray_dir);
 
-
-    let t_min = entry_collision.x.max(entry_collision.y).max(entry_collision.z);
-    let t_max = exit_collision.x.min(exit_collision.y).min(exit_collision.z);
-
+    let t_min = entry.x.max(entry.y).max(entry.z);
+    let t_max = exit.x.min(exit.y).min(exit.z);
 
     if t_min >= t_max {
         return None; 
@@ -94,32 +92,38 @@ fn find_intersection(ray: Ray, chunk: Chunk, current: u32) -> Option<Intersectio
         return None; 
     }
 
-    let mid_collision = vec_mult_scal(&vec_add(&entry_collision, &exit_collision), 0.5);
+    proc_subtree(ray, chunk, current, entry, exit, direction_mask)
 
-    let entry_plane = vec_entry_plane(&entry_collision);
+}
+
+fn proc_subtree(ray: &Ray, chunk: &Chunk, current: u32, entry: V3, exit: V3, direction_mask: u32) -> Option<IntersectionData>{
+    
+    let mid = vec_mult_scal(&vec_add(&entry, &exit), 0.5);
+
+    let entry_plane = vec_entry_plane(&entry);
 
     //000 is child 0 111 is child 7
     let mut first_child_intersect: u32 = 0; 
 
     if entry_plane == 0 {
-        if mid_collision.y < entry_collision.x {
+        if mid.y < entry.x {
             first_child_intersect |= 2;
         }
-        if mid_collision.z < entry_collision.x {
+        if mid.z < entry.x {
             first_child_intersect |= 4;
         }
     } else if entry_plane == 1 {
-        if mid_collision.x < entry_collision.y {
+        if mid.x < entry.y {
             first_child_intersect |= 1;
         }
-        if mid_collision.z < entry_collision.y {
+        if mid.z < entry.y {
             first_child_intersect |= 4;
         }
     } else {
-        if mid_collision.x < entry_collision.z {
+        if mid.x < entry.z {
             first_child_intersect |= 1;
         }
-        if mid_collision.y < entry_collision.z {
+        if mid.y < entry.z {
             first_child_intersect |= 2;
         }
     }
@@ -133,25 +137,37 @@ fn find_intersection(ray: Ray, chunk: Chunk, current: u32) -> Option<Intersectio
 
         if has_child(current, true_sub_voxel) {
 
-            let data = get_ending(current);
+            let voxel_data = get_ending(current);
 
             if is_leaf(current, true_sub_voxel) {
-                return Some(IntersectionData {
-                    ray,
-                    voxel_data: data,
-                });
+                return Some(IntersectionData { ray: *ray, voxel_data, });
             } else {
-                let next = chunk.data[data as usize];
+                let next = chunk.data[voxel_data as usize];
 
-                //this is dumb also, i can pass on collision data so i do not have to divide more.
-                return find_intersection(ray, chunk, next);
+                let sub_entry = V3 {
+                    x: if (current_sub_voxel & 1) != 0 { mid.x } else { entry.x },
+                    y: if (current_sub_voxel & 2) != 0 { mid.y } else { entry.y },
+                    z: if (current_sub_voxel & 4) != 0 { mid.z } else { entry.z },
+                };
+
+                let sub_exit = V3 {
+                    x: if (current_sub_voxel & 1) != 0 { exit.x } else { mid.x },
+                    y: if (current_sub_voxel & 2) != 0 { exit.y } else { mid.y },
+                    z: if (current_sub_voxel & 4) != 0 { exit.z } else { mid.z },
+                };
+
+                let result = proc_subtree(ray, chunk, next, sub_entry, sub_exit, direction_mask);
+                
+                if result.is_some() {
+                    return result;
+                }
             }
         }
 
         let node_exit: V3 = V3 {
-            x: if (current_sub_voxel & 1) != 0 { exit_collision.x } else { mid_collision.x },
-            y: if (current_sub_voxel & 2) != 0 { exit_collision.y } else { mid_collision.y },
-            z: if (current_sub_voxel & 4) != 0 { exit_collision.z } else { mid_collision.z },
+            x: if (current_sub_voxel & 1) != 0 { exit.x } else { mid.x },
+            y: if (current_sub_voxel & 2) != 0 { exit.y } else { mid.y },
+            z: if (current_sub_voxel & 4) != 0 { exit.z } else { mid.z },
         };
         let exit_plane = vec_exit_plane(&node_exit);
 
@@ -369,7 +385,7 @@ mod tests {
             direction: V3 { x: 1.0, y: 1.0, z: 1.0 }, // Pointing AWAY from the chunk
         };
 
-        let result = find_intersection(ray, chunk, 0);
+        let result = find_intersection(&ray, &chunk, 0);
         assert!(result.is_none(), "Ray should have missed the chunk completely");
     }
 
@@ -393,7 +409,7 @@ mod tests {
             direction: V3 { x: 1.0, y: 0.0, z: 0.0 }, // Straight right
         };
 
-        let result = find_intersection(ray, chunk, root_node_data);
+        let result = find_intersection(&ray, &chunk, root_node_data);
         
         assert!(result.is_some(), "Ray should have hit voxel 0");
         if let Some(intersect) = result {
@@ -423,7 +439,7 @@ mod tests {
             direction: V3 { x: -0.577, y: -0.577, z: -0.577 }, 
         };
 
-        let result = find_intersection(ray, chunk, root_node_data);
+        let result = find_intersection(&ray, &chunk, root_node_data);
         
         // If the XOR mask logic fails, it will think the ray hit Voxel 0 and return None.
         // If the XOR mask works, it will correctly translate the hit to Voxel 7.
