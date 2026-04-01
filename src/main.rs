@@ -11,6 +11,7 @@ struct App {
     surface: Option<Surface<Rc<Window>, Rc<Window>>>,
 }
 
+#[derive(Copy, Clone)]
 struct V3 {
     x: f32,
     y: f32,
@@ -30,7 +31,7 @@ struct IntersectionData {
 //32x32x32 chunk
 struct Chunk {
     //first 8 bits are bools for children(1) existing in each of the 8 positions. Z-order curve
-    //sencond u bits are bools for if children are leaf nodes(1) or are parents themselves(0).
+    //sencond 8 bits are bools for if children are leaf nodes(1) or are parents themselves(0).
     //last 16 bits are primarily pointers to the first child of current node. If they are a leaf
     //then they save the u8(u16) bit information about its material.
     ///0xCC(child)LL(leaf)OOOO(first_child_pointer)
@@ -41,13 +42,53 @@ struct Chunk {
     max_pos: V3,
 }
 
+fn main() {
+    let event_loop = EventLoop::new().unwrap();
+
+    event_loop.set_control_flow(ControlFlow::Poll);
+
+    let mut app = App {
+        window: None,
+        surface: None,
+    };
+
+    let _ = event_loop.run_app(&mut app);
+}
+
+///None = no intersectin in chunk by ray, else IntersectionData
 fn find_intersection(ray: Ray, chunk: Chunk, current: u32) -> Option<IntersectionData> {
 
-    //Use Parametric Octree Traversal
+    let mut direction_mask: u32 = 0;
+    let mut pos_ray_dir: V3 = ray.direction;
+
+    if pos_ray_dir.x < 0.0 {
+        direction_mask |= 1;
+        pos_ray_dir.x = -pos_ray_dir.x;
+    }
+    if pos_ray_dir.y < 0.0 {
+        direction_mask |= 2;
+        pos_ray_dir.y = -pos_ray_dir.y;
+    }
+    if pos_ray_dir.z < 0.0 {
+        direction_mask |= 4;
+        pos_ray_dir.z = -pos_ray_dir.z;
+    }
     
 
-    let entry_collision = vec_div(&vec_sub(&chunk.min_pos, &ray.origin), &ray.direction);
-    let exit_collision = vec_div(&vec_sub(&chunk.max_pos, &ray.origin), &ray.direction);
+    let entry_collision = vec_div(&vec_sub(&chunk.min_pos, &ray.origin), &pos_ray_dir);
+    let exit_collision = vec_div(&vec_sub(&chunk.max_pos, &ray.origin), &pos_ray_dir);
+
+
+    let t_min = entry_collision.x.max(entry_collision.y).max(entry_collision.z);
+    let t_max = exit_collision.x.min(exit_collision.y).min(exit_collision.z);
+
+
+    if t_min >= t_max {
+        return None; 
+    }
+    if t_max < 0.0 {
+        return None; 
+    }
 
     let mid_collision = vec_mult_scal(&vec_add(&entry_collision, &exit_collision), 0.5);
 
@@ -57,25 +98,20 @@ fn find_intersection(ray: Ray, chunk: Chunk, current: u32) -> Option<Intersectio
     let mut first_child_intersect: u32 = 0; 
 
     if entry_plane == 0 {
-
         if mid_collision.y < entry_collision.x {
             first_child_intersect |= 2;
         }
         if mid_collision.z < entry_collision.x {
             first_child_intersect |= 4;
         }
-
     } else if entry_plane == 1 {
-
         if mid_collision.x < entry_collision.y {
             first_child_intersect |= 1;
         }
         if mid_collision.z < entry_collision.y {
             first_child_intersect |= 4;
         }
-
     } else {
-
         if mid_collision.x < entry_collision.z {
             first_child_intersect |= 1;
         }
@@ -88,11 +124,14 @@ fn find_intersection(ray: Ray, chunk: Chunk, current: u32) -> Option<Intersectio
 
     loop {
 
-        if has_child(current, first_child_intersect) {
+
+        let true_sub_voxel: u32 = current_sub_voxel ^ direction_mask;
+
+        if has_child(current, true_sub_voxel) {
 
             let data = get_ending(current);
 
-            if is_leaf(current, first_child_intersect) {
+            if is_leaf(current, true_sub_voxel) {
                 return Some(IntersectionData {
                     ray,
                     voxel_data: data,
@@ -105,7 +144,7 @@ fn find_intersection(ray: Ray, chunk: Chunk, current: u32) -> Option<Intersectio
             }
         }
 
-        let mut node_exit: V3 = V3 {
+        let node_exit: V3 = V3 {
             x: if (current_sub_voxel & 1) != 0 { exit_collision.x } else { mid_collision.x },
             y: if (current_sub_voxel & 2) != 0 { exit_collision.y } else { mid_collision.y },
             z: if (current_sub_voxel & 4) != 0 { exit_collision.z } else { mid_collision.z },
@@ -113,16 +152,16 @@ fn find_intersection(ray: Ray, chunk: Chunk, current: u32) -> Option<Intersectio
         let exit_plane = vec_exit_plane(&node_exit);
 
         current_sub_voxel = match (current_sub_voxel, exit_plane) {
-            (0, 0) => 4, (0, 1) => 2, (0, 2) => 1,
-            (1, 0) => 5, (1, 1) => 3, (1, 2) => return None,
-            (2, 0) => 6, (2, 1) => return None, (2, 2) => 3,
-            (3, 0) => 7, (3, 1) => return None, (3, 2) => return None,
-            (4, 0) => return None, (4, 1) => 6, (4, 2) => 5,
+            (0, 0) => 1, (0, 1) => 2, (0, 2) => 4,
+            (1, 0) => return None, (1, 1) => 3, (1, 2) => 5,
+            (2, 0) => 3, (2, 1) => return None, (2, 2) => 6,
+            (3, 0) => return None, (3, 1) => return None, (3, 2) => 7,
+            (4, 0) => 5, (4, 1) => 6, (4, 2) => return None,
             (5, 0) => return None, (5, 1) => 7, (5, 2) => return None,
-            (6, 0) => return None, (6, 1) => return None, (6, 2) => 7,
+            (6, 0) => 7, (6, 1) => return None, (6, 2) => return None,
             (7, _) => return None, 
             _ => return None, 
-        };
+        };    
     }
 }
 
@@ -131,13 +170,13 @@ fn get_ending(data: u32) -> u32 {
 }
 
 fn is_leaf(data: u32, position: u32) -> bool {
-    let n = 1 << (position + 8);
+    let n = 1 << (position + 24);
 
     (data & n) != 0
 }
 
 fn has_child(data: u32, position: u32) -> bool {
-    let n = 1 << position;
+    let n = 1 << (position + 16);
 
     (data & n) != 0
 }
@@ -193,19 +232,6 @@ fn vec_exit_plane(v1: &V3) -> u32 {
     } else {
         2 //XY
     }
-}
-
-fn main() {
-    let event_loop = EventLoop::new().unwrap();
-
-    event_loop.set_control_flow(ControlFlow::Poll);
-
-    let mut app = App {
-        window: None,
-        surface: None,
-    };
-
-    let _ = event_loop.run_app(&mut app);
 }
 
 impl ApplicationHandler for App {
@@ -274,6 +300,3 @@ fn default_color(buffer: &mut [u32], width: u32, height: u32) {
         *pixel = (r << 16) | (g << 8) | b;
     }
 }
-
-
-
