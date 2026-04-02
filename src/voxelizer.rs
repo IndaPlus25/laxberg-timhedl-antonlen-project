@@ -128,6 +128,10 @@ fn vertecies_outside_same_corner(vertecies: [[f32; 3]; 3], cube_center: [f32; 3]
     outsides.iter().any(|x| *x )
 }
 
+fn triangle_edge_pierces_cube_face(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width: f32) -> bool {
+    todo!();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
