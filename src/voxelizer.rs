@@ -307,4 +307,56 @@ mod tests {
         
         assert_eq!(vertecies_outside_same_corner(vertecies, center, width), false)
     }
+
+    #[test]
+    fn triangle_pierces_positive_x_and_positive_y_faces_return_true() {
+        let vertecies = [
+            [0.0, 0.0, 0.0], 
+            [4.0, -2.0, 1.0], 
+            [4.0, 0.0, 2.0], 
+        ];
+        let center = [2.0, -2.0, 1.0];
+        let width = 1.0;
+        
+        assert!(vertecies_outside_same_corner(vertecies, center, width))
+    }
+
+    #[test]
+    fn triangle_pierces_x_and_positive_y_faces_return_true() {
+        let vertecies = [
+            [-2.0, -2.0, 0.0], 
+            [4.0, -2.0, 1.0], 
+            [4.0, 0.0, 2.0], 
+        ];
+        let center = [2.0, -2.0, 1.0];
+        let width = 1.0;
+        
+        assert!(vertecies_outside_same_corner(vertecies, center, width))
+    }
+
+    #[test]
+    fn triangle_pierces_x_and_y_faces_return_true() {
+        let vertecies = [
+            [0.0, -4.0, 1.0], 
+            [5.0, -1.0, 1.0], 
+            [2.0, 0.0, 1.0], 
+        ];
+        let center = [2.0, -2.0, 1.0];
+        let width = 1.0;
+        
+        assert!(vertecies_outside_same_corner(vertecies, center, width))
+    }
+
+    #[test]
+    fn no_edge_intersects_cube_face_return_false() {
+        let vertecies = [
+            [-2.0, -4.0, 1.0], 
+            [5.0, -4.0, 1.0], 
+            [2.0, 2.0, 1.0], 
+        ];
+        let center = [2.0, -2.0, 1.0];
+        let width = 1.0;
+        
+        assert_eq!(vertecies_outside_same_corner(vertecies, center, width), false)
+    } 
 }
