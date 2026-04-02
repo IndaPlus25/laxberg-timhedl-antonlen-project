@@ -318,7 +318,7 @@ mod tests {
         let center = [2.0, -2.0, 1.0];
         let width = 1.0;
         
-        assert!(vertecies_outside_same_corner(vertecies, center, width))
+        assert!(triangle_edge_pierces_cube_face(vertecies, center, width))
     }
 
     #[test]
@@ -331,7 +331,7 @@ mod tests {
         let center = [2.0, -2.0, 1.0];
         let width = 1.0;
         
-        assert!(vertecies_outside_same_corner(vertecies, center, width))
+        assert!(triangle_edge_pierces_cube_face(vertecies, center, width))
     }
 
     #[test]
@@ -344,7 +344,7 @@ mod tests {
         let center = [2.0, -2.0, 1.0];
         let width = 1.0;
         
-        assert!(vertecies_outside_same_corner(vertecies, center, width))
+        assert!(triangle_edge_pierces_cube_face(vertecies, center, width))
     }
 
     #[test]
@@ -357,6 +357,6 @@ mod tests {
         let center = [2.0, -2.0, 1.0];
         let width = 1.0;
         
-        assert_eq!(vertecies_outside_same_corner(vertecies, center, width), false)
+        assert_eq!(triangle_edge_pierces_cube_face(vertecies, center, width), false)
     } 
 }
