@@ -1,3 +1,5 @@
+mod octree;
+
 use std::num::NonZeroU32;
 use std::rc::Rc;
 use softbuffer::{Context, Surface};
