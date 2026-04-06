@@ -1,7 +1,321 @@
-struct V3 {
-    x: f32,
-    y: f32,
-    z: f32,
+use crate::vecmath::*;
+
+//32x32x32 chunk
+pub struct Chunk {
+    //first 8 bits are bools for children(1) existing in each of the 8 positions. Z-order curve
+    //sencond 8 bits are bools for if children are leaf nodes(1) or are parents themselves(0).
+    //last 16 bits are primarily pointers to the first child of current node. If they are a leaf
+    //then they save the u8(u16) bit information about its material.
+    ///0xCC(child)LL(leaf)OOOO(first_child_pointer)
+    pub data: Vec<u32>,
+    ///bottom, left, near corner position minimum position
+    pub min_pos: V3,
+    ///top, right, far corner position maximum position
+    pub max_pos: V3,
 }
 
-fn place_in_tree(payload: u32, position: V3)
+//pub fn place_in_tree(payload: u32, position: V3) {}
+
+pub fn find_intersection(ray: &Ray, chunk: &Chunk, current: u32) -> Option<IntersectionData> {
+
+    let mut direction_mask: u32 = 0;
+    let mut pos_ray_dir: V3 = ray.direction;
+    let mut pos_ray_origin: V3 = ray.origin;
+
+    if pos_ray_dir.x < 0.0 {
+        direction_mask |= 1;
+        pos_ray_dir.x = -pos_ray_dir.x;
+        pos_ray_origin.x = chunk.max_pos.x - (ray.origin.x - chunk.min_pos.x);
+    }
+    if pos_ray_dir.y < 0.0 {
+        direction_mask |= 2;
+        pos_ray_dir.y = -pos_ray_dir.y;
+        pos_ray_origin.y = chunk.max_pos.y - (ray.origin.y - chunk.min_pos.y);
+    }
+    if pos_ray_dir.z < 0.0 {
+        direction_mask |= 4;
+        pos_ray_dir.z = -pos_ray_dir.z;
+        pos_ray_origin.z = chunk.max_pos.z - (ray.origin.z - chunk.min_pos.z);
+    }
+
+    let entry = vec_div(&vec_sub(&chunk.min_pos, &pos_ray_origin), &pos_ray_dir);
+    let exit = vec_div(&vec_sub(&chunk.max_pos, &pos_ray_origin), &pos_ray_dir);
+
+    let t_min = entry.x.max(entry.y).max(entry.z);
+    let t_max = exit.x.min(exit.y).min(exit.z);
+
+    if t_min >= t_max {
+        return None; 
+    }
+    if t_max < 0.0 {
+        return None; 
+    }
+
+    proc_subtree(ray, chunk, current, entry, exit, direction_mask)
+
+}
+
+fn proc_subtree(ray: &Ray, chunk: &Chunk, current: u32, entry: V3, exit: V3, direction_mask: u32) -> Option<IntersectionData>{
+    
+    let mid = vec_mult_scal(&vec_add(&entry, &exit), 0.5);
+
+    let entry_plane = vec_entry_plane(&entry);
+
+    //000 is child 0 111 is child 7
+    let mut first_child_intersect: u32 = 0; 
+
+    if entry_plane == 0 {
+        if mid.y < entry.x {
+            first_child_intersect |= 2;
+        }
+        if mid.z < entry.x {
+            first_child_intersect |= 4;
+        }
+    } else if entry_plane == 1 {
+        if mid.x < entry.y {
+            first_child_intersect |= 1;
+        }
+        if mid.z < entry.y {
+            first_child_intersect |= 4;
+        }
+    } else {
+        if mid.x < entry.z {
+            first_child_intersect |= 1;
+        }
+        if mid.y < entry.z {
+            first_child_intersect |= 2;
+        }
+    }
+
+    let mut current_sub_voxel: u32 = first_child_intersect;
+
+    loop {
+
+
+        let true_sub_voxel: u32 = current_sub_voxel ^ direction_mask;
+
+        if has_child(current, true_sub_voxel) {
+
+            let voxel_data = get_ending(current);
+
+            if is_leaf(current, true_sub_voxel) {
+                return Some(IntersectionData { ray: *ray, voxel_data });
+            } else {
+
+                let next = chunk.data[voxel_data as usize + child_pop_count(current, true_sub_voxel) as usize];
+
+                let sub_entry = V3 {
+                    x: if (current_sub_voxel & 1) != 0 { mid.x } else { entry.x },
+                    y: if (current_sub_voxel & 2) != 0 { mid.y } else { entry.y },
+                    z: if (current_sub_voxel & 4) != 0 { mid.z } else { entry.z },
+                };
+
+                let sub_exit = V3 {
+                    x: if (current_sub_voxel & 1) != 0 { exit.x } else { mid.x },
+                    y: if (current_sub_voxel & 2) != 0 { exit.y } else { mid.y },
+                    z: if (current_sub_voxel & 4) != 0 { exit.z } else { mid.z },
+                };
+
+                let result = proc_subtree(ray, chunk, next, sub_entry, sub_exit, direction_mask);
+                
+                if result.is_some() {
+                    return result;
+                }
+            }
+        }
+
+        let node_exit: V3 = V3 {
+            x: if (current_sub_voxel & 1) != 0 { exit.x } else { mid.x },
+            y: if (current_sub_voxel & 2) != 0 { exit.y } else { mid.y },
+            z: if (current_sub_voxel & 4) != 0 { exit.z } else { mid.z },
+        };
+        let exit_plane = vec_exit_plane(&node_exit);
+
+        current_sub_voxel = match (current_sub_voxel, exit_plane) {
+            (0, 0) => 1, (0, 1) => 2, (0, 2) => 4,
+            (1, 0) => return None, (1, 1) => 3, (1, 2) => 5,
+            (2, 0) => 3, (2, 1) => return None, (2, 2) => 6,
+            (3, 0) => return None, (3, 1) => return None, (3, 2) => 7,
+            (4, 0) => 5, (4, 1) => 6, (4, 2) => return None,
+            (5, 0) => return None, (5, 1) => 7, (5, 2) => return None,
+            (6, 0) => 7, (6, 1) => return None, (6, 2) => return None,
+            (7, _) => return None, 
+            _ => return None, 
+        };    
+    }
+}
+
+pub fn get_ending(data: u32) -> u32 {
+    data & 0xFFFF
+}
+
+fn is_leaf(data: u32, position: u32) -> bool {
+    let n = 1_u32 << (position + 16);
+
+    (data & n) != 0
+}
+
+fn has_child(data: u32, position: u32) -> bool {
+    let n = 1_u32 << (position + 24);
+
+    (data & n) != 0
+}
+
+fn child_pop_count(data: u32, true_sub_voxel: u32) -> u32 {
+    let child_byte = data >> 24;
+    let mask = (1 << true_sub_voxel) -1;
+    let bits_before = child_byte & mask;
+    bits_before.count_ones()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bitwise_packing() {
+        let mut test_state: u32 = 0;
+        
+        test_state |= 1 << 24;      // Child 0 exists
+        test_state |= 1 << 31;      // Child 7 exists
+        
+        test_state |= 1 << 16;      // Child 0 is a leaf
+        
+        let payload: u32 = 0xABCD;
+        test_state |= payload;      // Add the payload to the bottom 16 bits
+        
+        assert!(has_child(test_state, 0), "Failed to find Child 0 in CC byte");
+        assert!(has_child(test_state, 7), "Failed to find Child 7 in CC byte");
+        assert!(!has_child(test_state, 1), "Falsely found Child 1 in CC byte");
+        
+        assert!(is_leaf(test_state, 0), "Failed to identify Child 0 as a leaf in LL byte");
+        assert!(!is_leaf(test_state, 7), "Falsely identified Child 7 as a leaf in LL byte"); 
+        
+        assert_eq!(get_ending(test_state), 0xABCD, "Failed to extract OOOO payload");
+    }
+
+    #[test]
+    fn test_ray_misses_chunk_completely() {
+        let chunk = Chunk {
+            data: vec![],
+            min_pos: V3 { x: 0.0, y: 0.0, z: 0.0 },
+            max_pos: V3 { x: 32.0, y: 32.0, z: 32.0 },
+        };
+
+        let ray = Ray {
+            origin: V3 { x: 50.0, y: 50.0, z: 50.0 }, // Outside the chunk
+            direction: V3 { x: 1.0, y: 1.0, z: 1.0 }, // Pointing AWAY from the chunk
+        };
+
+        let result = find_intersection(&ray, &chunk, 0);
+        assert!(result.is_none(), "Ray should have missed the chunk completely");
+    }
+
+    #[test]
+    fn test_direct_hit_on_voxel_zero() {
+        //Child 0 exists, Child 0 is leaf, Payload is 0x9999
+        let mut root_node_data: u32 = 0;
+        root_node_data |= 1 << 24;    // Child 0 exists
+        root_node_data |= 1 << 16;    // Child 0 is leaf
+        root_node_data |= 0x9999;     // Payload
+
+        let chunk = Chunk {
+            data: vec![root_node_data],
+            min_pos: V3 { x: 0.0, y: 0.0, z: 0.0 },
+            max_pos: V3 { x: 32.0, y: 32.0, z: 32.0 },
+        };
+
+        // Ray starts slightly outside the chunk on the X axis, pointing straight through Voxel 0
+        let ray = Ray {
+            origin: V3 { x: -5.0, y: 8.0, z: 8.0 }, 
+            direction: V3 { x: 1.0, y: 0.0, z: 0.0 }, // Straight right
+        };
+
+        let result = find_intersection(&ray, &chunk, root_node_data);
+        
+        assert!(result.is_some(), "Ray should have hit voxel 0");
+        if let Some(intersect) = result {
+            // Check if it returned the correct payload (the lower 16 bits of our mock data)
+            assert_eq!(intersect.voxel_data, 0x9999, "Returned incorrect payload"); 
+        }
+    }
+
+    #[test]
+    fn test_negative_ray_reflection() {
+        // Build the root node data: Child 7 exists, Child 7 is leaf, Payload is 0x7777
+        let mut root_node_data: u32 = 0;
+        root_node_data |= 1_u32 << 31; // Child 7 exists 
+        root_node_data |= 1 << 23;     // Child 7 is leaf
+        root_node_data |= 0x7777;      // Payload
+
+        let chunk = Chunk {
+            data: vec![root_node_data],
+            min_pos: V3 { x: 0.0, y: 0.0, z: 0.0 },
+            max_pos: V3 { x: 32.0, y: 32.0, z: 32.0 },
+        };
+
+        // Ray starts outside the top-right-back corner, pointing straight backwards towards the origin
+        let ray = Ray {
+            origin: V3 { x: 40.0, y: 40.0, z: 40.0 }, 
+            // Negative directions! This will trigger your XOR mask logic.
+            direction: V3 { x: -0.577, y: -0.577, z: -0.577 }, 
+        };
+
+        let result = find_intersection(&ray, &chunk, root_node_data);
+        
+        // If the XOR mask logic fails, it will think the ray hit Voxel 0 and return None.
+        // If the XOR mask works, it will correctly translate the hit to Voxel 7.
+        assert!(result.is_some(), "Negative ray reflection failed to hit voxel 7");
+        if let Some(intersect) = result {
+            assert_eq!(intersect.voxel_data, 0x7777, "Hit the right voxel, but got the wrong data");
+        }
+    }
+
+    #[test]
+    fn test_deep_voxel_traversal() {
+        // Target Voxel: (25, 6, 18)
+        // Depth: 5 levels (32 -> 16 -> 8 -> 4 -> 2 -> 1)
+        // L0 (32x32): Child 5 (Right, Bottom, Back)  -> Points to index 1
+        // L1 (16x16): Child 1 (Right, Bottom, Front) -> Points to index 2
+        // L2 (8x8):   Child 2 (Left,  Top,    Front) -> Points to index 3
+        // L3 (4x4):   Child 6 (Left,  Top,    Back)  -> Points to index 4
+        // L4 (2x2):   Child 1 (Right, Bottom, Front) -> LEAF! Payload 0xCAFE
+
+        let mut tree_data = vec![0_u32; 5];
+        
+        // Node 0: Child 5 exists, points to index 1
+        tree_data[0] = (1_u32 << (5 + 24)) | 1;
+        
+        // Node 1: Child 1 exists, points to index 2
+        tree_data[1] = (1_u32 << (1 + 24)) | 2;
+        
+        // Node 2: Child 2 exists, points to index 3
+        tree_data[2] = (1_u32 << (2 + 24)) | 3;
+        
+        // Node 3: Child 6 exists, points to index 4
+        tree_data[3] = (1_u32 << (6 + 24)) | 4;
+        
+        // Node 4: Child 1 exists, IS LEAF, contains payload 0xCAFE
+        tree_data[4] = (1_u32 << (1 + 24)) | (1_u32 << (1 + 16)) | 0xCAFE;
+
+        let chunk = Chunk {
+            data: tree_data,
+            min_pos: V3 { x: 0.0, y: 0.0, z: 0.0 },
+            max_pos: V3 { x: 32.0, y: 32.0, z: 32.0 },
+        };
+
+        // Ray starts outside at X=-1, aiming straight along +X into Y=6.5, Z=18.5
+        // We use 0.0001 for Y and Z to prevent Float NaN math (a standard engine edge-case fix)
+        let ray = Ray {
+            origin: V3 { x: -1.0, y: 6.5, z: 18.5 },
+            direction: V3 { x: 1.0, y: 0.0001, z: 0.0001 },
+        };
+
+        let result = find_intersection(&ray, &chunk, chunk.data[0]); // Start at index 0
+
+        assert!(result.is_some(), "Ray completely missed the deep voxel!");
+        if let Some(intersect) = result {
+            assert_eq!(intersect.voxel_data, 0xCAFE, "Hit the wrong voxel or extracted wrong data!");
+        }
+    }
+}
