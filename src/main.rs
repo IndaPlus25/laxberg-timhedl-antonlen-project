@@ -69,30 +69,24 @@ impl ApplicationHandler for App {
                     let width = size.width;
                     let height = size.height;
 
-                    let mut tree_data = vec![0_u32; 40];
-
                     let fov = std::f32::consts::PI / 2.0;
 
                     let player = Player {
                         position: V3{
                             x: -32.0,
-                            y: -16.0,
-                            z: 30.0,
+                            y: 45.0,
+                            z: 45.0,
                         },
-                        direction: (std::f32::consts::PI / 1.5, 0.2)               
+                        direction: (std::f32::consts::PI / 1.5, 0.0)               
                     };
 
-                    tree_data[0] = (1 << 24) | (1 << (3 + 24)) | (1 << (6 + 24)) | 1; 
+                    let mut tree_data = vec![0_u32; 40];
 
-                    tree_data[1] = (128 << 24) | 4; 
-                    tree_data[2] = (255 << 24) | (255 << 16) | 2; // Green block
-                    tree_data[3] = (255 << 24) | (255 << 16) | 3; // Blue block
-
-
-                    tree_data[4] = (128 << 24) | 5;
-                    tree_data[5] = (128 << 24) | 6;
-                    tree_data[6] = (128 << 24) | 7;
-                    tree_data[7] = (105 << 24) | (105 << 16) | 1;
+                    tree_data[0] = (73 << 24) | (72 << 16) | 1; 
+                    tree_data[1] = (128 << 24) | (128 << 16) | 4; 
+                    tree_data[2] = 2; 
+                    tree_data[3] = 3; 
+                    tree_data[4] = 1;
 
                     let chunk = Chunk {
                         data: tree_data,

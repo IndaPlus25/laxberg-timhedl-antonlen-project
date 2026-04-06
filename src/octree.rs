@@ -1,6 +1,6 @@
 use crate::vecmath::*;
 
-//32x32x32 chunk
+//32x32x32 octree optimized chunk
 pub struct Chunk {
     //first 8 bits are bools for children(1) existing in each of the 8 positions. Z-order curve
     //sencond 8 bits are bools for if children are leaf nodes(1) or are parents themselves(0).
@@ -14,7 +14,40 @@ pub struct Chunk {
     pub max_pos: V3,
 }
 
-//pub fn place_in_tree(payload: u32, position: V3) {}
+//32x32x32 non-octree optimized chunk, raw data
+pub struct FlatChunk {
+
+    pub data: Vec<u32>,
+    pub min_pos: V3,
+    pub max_pos: V3,
+
+}
+
+pub fn to_chunks(data: &[&[&[u32]]]) -> Vec<u32> {
+    let width = data.len();
+    let height = if width > 0 { data[0].len() } else { 0 };
+    let depth = if height > 0 { data[0][0].len() } else { 0 };
+
+    let total_size = width * height * depth;
+
+    let mut flat_data = vec![0; total_size];
+
+    for x in 0..width {
+        for y in 0..height {
+            for z in 0..depth {
+                let block = data[x][y][z];
+                
+                if block != 0 {
+                    let index = (x * height * depth) + (y * depth) + z;
+                    
+                    flat_data[index] = block;
+                }
+            }
+        }
+    }
+
+    flat_data
+}
 
 pub fn find_intersection(ray: &Ray, chunk: &Chunk, current: u32) -> Option<IntersectionData> {
 
@@ -96,13 +129,19 @@ fn proc_subtree(ray: &Ray, chunk: &Chunk, current: u32, entry: V3, exit: V3, dir
 
         if has_child(current, true_sub_voxel) {
 
-            let voxel_data = get_ending(current);
+            let pointer = get_ending(current);
+
+            let child_index = pointer as usize +  child_pop_count(current, true_sub_voxel) as usize;
+
+            let child_node = chunk.data[child_index];
 
             if is_leaf(current, true_sub_voxel) {
-                return Some(IntersectionData { ray: *ray, voxel_data });
+
+                let material = get_ending(child_node);
+                return Some(IntersectionData { ray: *ray, voxel_data: material });
             } else {
 
-                let next = chunk.data[voxel_data as usize + child_pop_count(current, true_sub_voxel) as usize];
+                //let next = chunk.data[voxel_data as usize + child_pop_count(current, true_sub_voxel) as usize];
 
                 let sub_entry = V3 {
                     x: if (current_sub_voxel & 1) != 0 { mid.x } else { entry.x },
@@ -116,7 +155,7 @@ fn proc_subtree(ray: &Ray, chunk: &Chunk, current: u32, entry: V3, exit: V3, dir
                     z: if (current_sub_voxel & 4) != 0 { exit.z } else { mid.z },
                 };
 
-                let result = proc_subtree(ray, chunk, next, sub_entry, sub_exit, direction_mask);
+                let result = proc_subtree(ray, chunk, child_node, sub_entry, sub_exit, direction_mask);
                 
                 if result.is_some() {
                     return result;
@@ -317,5 +356,72 @@ mod tests {
         if let Some(intersect) = result {
             assert_eq!(intersect.voxel_data, 0xCAFE, "Hit the wrong voxel or extracted wrong data!");
         }
+    }
+
+    #[test]
+    fn test_standard_cube() {
+        // A 2x2x2 cube
+        // total_size = 8
+        let data: &[&[&[u32]]] = &[
+            // x = 0
+            &[
+                &[1, 0], // y = 0 (z = 0, z = 1)
+                &[0, 2], // y = 1 (z = 0, z = 1)
+            ],
+            // x = 1
+            &[
+                &[0, 3], // y = 0
+                &[4, 0], // y = 1
+            ],
+        ];
+
+        let result = to_chunks(data);
+        
+        assert_eq!(result.len(), 8);
+        assert_eq!(result, vec![1, 0, 0, 2, 0, 3, 4, 0]);
+    }
+
+    #[test]
+    fn test_asymmetrical_dimensions() {
+        // Width = 1, Height = 2, Depth = 3
+        // total_size = 6
+        let data: &[&[&[u32]]] = &[
+            // x = 0
+            &[
+                &[1, 2, 3], // y = 0
+                &[0, 5, 0], // y = 1
+            ]
+        ];
+
+        let result = to_chunks(data);
+        
+        assert_eq!(result.len(), 6);
+        assert_eq!(result, vec![1, 2, 3, 0, 5, 0]);
+    }
+
+    #[test]
+    fn test_single_element() {
+        // Width = 1, Height = 1, Depth = 1
+        let data: &[&[&[u32]]] = &[
+            &[
+                &[42]
+            ]
+        ];
+
+        let result = to_chunks(data);
+        
+        assert_eq!(result.len(), 1);
+        assert_eq!(result, vec![42]);
+    }
+
+    #[test]
+    fn test_empty_data() {
+        // Width = 0
+        let data: &[&[&[u32]]] = &[];
+
+        let result = to_chunks(data);
+        
+        assert_eq!(result.len(), 0);
+        assert_eq!(result, Vec::<u32>::new());
     }
 }

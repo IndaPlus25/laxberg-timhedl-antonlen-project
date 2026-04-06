@@ -27,7 +27,7 @@ pub fn raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, player: 
     let plane_width = 2.0 * (fov / 2.0).tan();
     let plane_height = plane_width / aspect_ratio;
 
-    let global_up = V3 { x: 0.0, y: 0.0, z: 1.0 };
+    let global_up = V3 { x: 0.0, y: 1.0, z: 0.0 };
 
     let forward_vec = V3 {
         x: (player.direction.1).cos() * (player.direction.0).sin(),
