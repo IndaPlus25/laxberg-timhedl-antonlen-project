@@ -1,4 +1,4 @@
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct V3 {
     pub x: f32,
     pub y: f32,
@@ -23,6 +23,7 @@ pub struct IntersectionData {
     pub voxel_data: u32,
 }
 
+#[inline(always)]
 pub fn vec_add(v1: &V3, v2: &V3) -> V3 {
     V3 {
         x: v1.x + v2.x,
@@ -31,6 +32,7 @@ pub fn vec_add(v1: &V3, v2: &V3) -> V3 {
     }
 }
 
+#[inline(always)]
 pub fn vec_sub(v1: &V3, v2: &V3) -> V3 {
     V3 {
         x: v1.x - v2.x,
@@ -39,6 +41,7 @@ pub fn vec_sub(v1: &V3, v2: &V3) -> V3 {
     }
 }
 
+#[inline(always)]
 pub fn vec_div(v1: &V3, v2: &V3) -> V3 {
     V3 {
         x: v1.x / v2.x,
@@ -47,6 +50,7 @@ pub fn vec_div(v1: &V3, v2: &V3) -> V3 {
     }
 }
 
+#[inline(always)]
 pub fn vec_div_scal(v: &V3, n: f32) -> V3 {
     V3 {
         x: v.x / n,
@@ -55,6 +59,7 @@ pub fn vec_div_scal(v: &V3, n: f32) -> V3 {
     }   
 }
 
+#[inline(always)]
 pub fn vec_mult_scal(v: &V3, n: f32) -> V3 {
     V3{
         x: v.x * n,
@@ -63,6 +68,7 @@ pub fn vec_mult_scal(v: &V3, n: f32) -> V3 {
     }
 }
 
+#[inline]
 pub fn vec_entry_plane(v: &V3) -> u32 {
     if v.x > v.y && v.x > v.z {
         0 //YZ plane
@@ -73,6 +79,7 @@ pub fn vec_entry_plane(v: &V3) -> u32 {
     }
 }
 
+#[inline(always)]
 pub fn vec_exit_plane(v: &V3) -> u32 {
     if v.x < v.y && v.x < v.z {
         0 //YZ
@@ -83,6 +90,7 @@ pub fn vec_exit_plane(v: &V3) -> u32 {
     }
 }
 
+#[inline]
 pub fn vec_normalize (v: &V3) -> V3 {
     let len = (v.x * v.x + v.y * v.y + v.z * v.z).sqrt();
 
@@ -97,6 +105,7 @@ pub fn vec_normalize (v: &V3) -> V3 {
     }
 }
 
+#[inline(always)]
 pub fn vec_crossp(v1: &V3, v2: &V3) -> V3 {
     V3 {
         x: v1.y * v2.z - v1.z * v2.y,
@@ -105,6 +114,7 @@ pub fn vec_crossp(v1: &V3, v2: &V3) -> V3 {
     }
 }
 
+#[inline]
 pub fn vec_floor_to_v3i(v: &V3) -> V3i {
     V3i {
         x: v.x.floor() as i32,
@@ -113,6 +123,7 @@ pub fn vec_floor_to_v3i(v: &V3) -> V3i {
     }
 }
 
+#[inline]
 pub fn vec_inv_dir_dda(v: &V3) -> V3 {
     V3 {
         x: if v.x.abs() > 1e-8 { 1.0 / v.x } else { f32::INFINITY },
