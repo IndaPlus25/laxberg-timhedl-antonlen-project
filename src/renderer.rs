@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use rayon::prelude::*;
 
 use crate::vecmath::*;
 use crate::octree::*;
@@ -51,7 +52,9 @@ pub fn raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, player: 
     let delta_x = vec_mult_scal(&right_vec, step_x_size);
     let delta_y = vec_mult_scal(&up_vec, -step_y_size);
 
-    for (index, pixel) in buffer.iter_mut().enumerate() {
+    let player_pos = player.position;
+
+    buffer.par_iter_mut().enumerate().for_each(|(index, pixel)| {
         let x = (index % width as usize) as f32;
         let y = (index / width as usize) as f32;
 
@@ -61,7 +64,7 @@ pub fn raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, player: 
         let big_ray_dir = vec_add(&top_left_vec, &vec_add(&x_offset, &y_offset));
         let ray_dir = vec_normalize(&big_ray_dir);
 
-        let ray = Ray { origin: player.position, direction: ray_dir };
+        let ray = Ray { origin: player_pos, direction: ray_dir };
 
         let intersection = cast_ray(&ray, chunks, 32);
 
@@ -76,5 +79,5 @@ pub fn raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, player: 
         } else {
             *pixel = 0;  
         }
-    }
+    });
 }

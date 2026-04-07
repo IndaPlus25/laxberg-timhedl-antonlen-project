@@ -527,7 +527,7 @@ mod macro_traversal_tests {
         if let Some(intersect) = result {
             assert_eq!(intersect.voxel_data, 0xCAFE, "Hit the wrong voxel or extracted wrong data!");
         }
-    }
+    } 
     #[test]
     fn test_standard_cube() {
         // A 2x2x2 cube
