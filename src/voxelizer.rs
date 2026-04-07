@@ -132,7 +132,7 @@ fn triangle_edge_pierces_cube_face(vertecies: [[f32; 3]; 3], cube_center: [f32; 
     todo!();
 }
 
-fn line_intersects_with_plane(point1: [f32; 3], point2: [f32; 3], axis: usize, plane_axis_value: f32) -> bool {
+fn line_intersect_point_with_plane(point1: [f32; 3], point2: [f32; 3], axis: usize, plane_axis_value: f32) -> Option<(f32, f32, f32)> {
     todo!();
 }
 
