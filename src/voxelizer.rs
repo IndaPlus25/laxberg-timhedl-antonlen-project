@@ -1,30 +1,13 @@
 /// Checks if any of a triangles vertecies are within a given box
 fn verticies_in_cube(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width: f32) -> bool {
-    let min_x = cube_center[0] - cube_width;
-    let max_x = cube_center[0] + cube_width;
-
-    let min_y = cube_center[1] - cube_width;
-    let max_y = cube_center[1] + cube_width;
-
-    let min_z = cube_center[2] - cube_width;
-    let max_z = cube_center[2] + cube_width;
-
     for vertex in vertecies {
-        let vertex_x = vertex[0];
-        let vertex_y = vertex[1];
-        let vertex_z = vertex[2];
+        let dx = vertex[0] - cube_center[0];
+        let dy = vertex[1] - cube_center[1];
+        let dz = vertex[2] - cube_center[2];
 
-        if vertex_x > max_x || vertex_x < min_x {
-            continue;
-        }
-
-        if vertex_y > max_y || vertex_y < min_y {
-            continue;
-        }
-
-        if vertex_z > max_z || vertex_y < min_z {
-            continue;
-        }
+        if dx > cube_width || -dx > cube_width{ continue; }
+        if dy > cube_width || -dy > cube_width{ continue; }
+        if dz > cube_width || -dz > cube_width{ continue; }
 
         return true;
     };
