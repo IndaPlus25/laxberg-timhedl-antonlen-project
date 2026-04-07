@@ -129,7 +129,36 @@ fn vertecies_outside_same_corner(vertecies: [[f32; 3]; 3], cube_center: [f32; 3]
 }
 
 fn triangle_edge_pierces_cube_face(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width: f32) -> bool {
-    todo!();
+    let edge1 = [vertecies[0], vertecies[1]];
+    let edge2 = [vertecies[1], vertecies[2]];
+    let edge3 = [vertecies[2], vertecies[0]];
+    let edges = [edge1, edge2, edge3];
+
+    // Iterate over the planes and calculate the axis and axis value for the plane
+    for i in 0..6 {
+        let axis = i % 3;
+        let sign = if i < 3 { 1.0 } else { -1.0 };
+        let plane_axis_value = cube_center[axis] + (cube_width * sign);
+
+        // Iterate over the edges and check if any intersect with the current plane
+        for edge in 0..3 {
+            let Some(vertex) = line_intersect_point_with_plane(edges[edge][0], edges[edge][1], axis, plane_axis_value) else {
+                continue;
+            };
+
+            let dx = vertex[0] - cube_center[0];
+            let dy = vertex[1] - cube_center[1];
+            let dz = vertex[2] - cube_center[2];
+
+            if dx > cube_width || -dx > cube_width { continue; }
+            if dy > cube_width || -dy > cube_width { continue; }
+            if dz > cube_width || -dz > cube_width { continue; }
+
+            return true
+        }
+    };
+
+    false
 }
 
 fn line_intersect_point_with_plane(point1: [f32; 3], point2: [f32; 3], axis: usize, plane_axis_value: f32) -> Option<[f32; 3]> {
