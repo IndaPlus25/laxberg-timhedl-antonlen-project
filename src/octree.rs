@@ -213,21 +213,18 @@ fn proc_subtree(ray: &Ray, chunk: &Chunk, current: u32, entry: V3, exit: V3, dir
         let true_sub_voxel: u32 = current_sub_voxel ^ direction_mask;
 
         if has_child(current, true_sub_voxel) {
-
             let pointer = get_ending(current);
+            let child_index = pointer as usize + child_pop_count(current, true_sub_voxel) as usize;
+            if child_index >= chunk.data.len() {
+                return None;
+            }
 
-            let child_index = pointer as usize +  child_pop_count(current, true_sub_voxel) as usize;
-
-            let child_node = chunk.data[child_index];
+            let node_at_index = chunk.data[child_index];
 
             if is_leaf(current, true_sub_voxel) {
-
-                let material = get_ending(child_node);
+                let material = get_ending(node_at_index);
                 return Some(IntersectionData { ray: *ray, voxel_data: material });
             } else {
-
-                //let next = chunk.data[voxel_data as usize + child_pop_count(current, true_sub_voxel) as usize];
-
                 let sub_entry = V3 {
                     x: if (current_sub_voxel & 1) != 0 { mid.x } else { entry.x },
                     y: if (current_sub_voxel & 2) != 0 { mid.y } else { entry.y },
@@ -240,8 +237,7 @@ fn proc_subtree(ray: &Ray, chunk: &Chunk, current: u32, entry: V3, exit: V3, dir
                     z: if (current_sub_voxel & 4) != 0 { exit.z } else { mid.z },
                 };
 
-                let result = proc_subtree(ray, chunk, child_node, sub_entry, sub_exit, direction_mask);
-                
+                let result = proc_subtree(ray, chunk, node_at_index, sub_entry, sub_exit, direction_mask);
                 if result.is_some() {
                     return result;
                 }
@@ -337,58 +333,58 @@ mod tests {
 
     #[test]
     fn test_direct_hit_on_voxel_zero() {
-        //Child 0 exists, Child 0 is leaf, Payload is 0x9999
         let mut root_node_data: u32 = 0;
         root_node_data |= 1 << 24;    // Child 0 exists
         root_node_data |= 1 << 16;    // Child 0 is leaf
-        root_node_data |= 0x9999;     // Payload
+        // POINTER: Point to index 1 in the data array
+        root_node_data |= 1;          
+
+        // LEAF NODE: The actual child occupying a slot, holding the payload
+        let leaf_payload: u32 = 0x9999;     
 
         let chunk = Chunk {
-            data: vec![root_node_data],
+            data: vec![root_node_data, leaf_payload], // Vector now has length 2
             min_pos: V3 { x: 0.0, y: 0.0, z: 0.0 },
             max_pos: V3 { x: 32.0, y: 32.0, z: 32.0 },
         };
 
-        // Ray starts slightly outside the chunk on the X axis, pointing straight through Voxel 0
         let ray = Ray {
             origin: V3 { x: -5.0, y: 8.0, z: 8.0 }, 
-            direction: V3 { x: 1.0, y: 0.0, z: 0.0 }, // Straight right
+            direction: V3 { x: 1.0, y: 0.0, z: 0.0 },
         };
 
         let result = find_intersection(&ray, &chunk, root_node_data);
         
         assert!(result.is_some(), "Ray should have hit voxel 0");
         if let Some(intersect) = result {
-            // Check if it returned the correct payload (the lower 16 bits of our mock data)
             assert_eq!(intersect.voxel_data, 0x9999, "Returned incorrect payload"); 
         }
     }
 
     #[test]
     fn test_negative_ray_reflection() {
-        // Build the root node data: Child 7 exists, Child 7 is leaf, Payload is 0x7777
         let mut root_node_data: u32 = 0;
         root_node_data |= 1_u32 << 31; // Child 7 exists 
         root_node_data |= 1 << 23;     // Child 7 is leaf
-        root_node_data |= 0x7777;      // Payload
+        // POINTER: Point to index 1 in the data array
+        root_node_data |= 1;           
+
+        // LEAF NODE: The payload
+        let leaf_payload: u32 = 0x7777;      
 
         let chunk = Chunk {
-            data: vec![root_node_data],
+            data: vec![root_node_data, leaf_payload], // Vector now has length 2
             min_pos: V3 { x: 0.0, y: 0.0, z: 0.0 },
             max_pos: V3 { x: 32.0, y: 32.0, z: 32.0 },
         };
 
-        // Ray starts outside the top-right-back corner, pointing straight backwards towards the origin
         let ray = Ray {
             origin: V3 { x: 40.0, y: 40.0, z: 40.0 }, 
-            // Negative directions! This will trigger your XOR mask logic.
             direction: V3 { x: -0.577, y: -0.577, z: -0.577 }, 
         };
 
         let result = find_intersection(&ray, &chunk, root_node_data);
         
-        // If the XOR mask logic fails, it will think the ray hit Voxel 0 and return None.
-        // If the XOR mask works, it will correctly translate the hit to Voxel 7.
         assert!(result.is_some(), "Negative ray reflection failed to hit voxel 7");
         if let Some(intersect) = result {
             assert_eq!(intersect.voxel_data, 0x7777, "Hit the right voxel, but got the wrong data");
@@ -397,15 +393,8 @@ mod tests {
 
     #[test]
     fn test_deep_voxel_traversal() {
-        // Target Voxel: (25, 6, 18)
-        // Depth: 5 levels (32 -> 16 -> 8 -> 4 -> 2 -> 1)
-        // L0 (32x32): Child 5 (Right, Bottom, Back)  -> Points to index 1
-        // L1 (16x16): Child 1 (Right, Bottom, Front) -> Points to index 2
-        // L2 (8x8):   Child 2 (Left,  Top,    Front) -> Points to index 3
-        // L3 (4x4):   Child 6 (Left,  Top,    Back)  -> Points to index 4
-        // L4 (2x2):   Child 1 (Right, Bottom, Front) -> LEAF! Payload 0xCAFE
-
-        let mut tree_data = vec![0_u32; 5];
+        // We now need 6 elements, because Node 4 points to Node 5
+        let mut tree_data = vec![0_u32; 6]; 
         
         // Node 0: Child 5 exists, points to index 1
         tree_data[0] = (1_u32 << (5 + 24)) | 1;
@@ -419,8 +408,11 @@ mod tests {
         // Node 3: Child 6 exists, points to index 4
         tree_data[3] = (1_u32 << (6 + 24)) | 4;
         
-        // Node 4: Child 1 exists, IS LEAF, contains payload 0xCAFE
-        tree_data[4] = (1_u32 << (1 + 24)) | (1_u32 << (1 + 16)) | 0xCAFE;
+        // Node 4: Child 1 exists, IS LEAF, points to index 5
+        tree_data[4] = (1_u32 << (1 + 24)) | (1_u32 << (1 + 16)) | 5;
+
+        // Node 5: The actual leaf node, contains payload 0xCAFE
+        tree_data[5] = 0xCAFE;
 
         let chunk = Chunk {
             data: tree_data,
@@ -428,21 +420,18 @@ mod tests {
             max_pos: V3 { x: 32.0, y: 32.0, z: 32.0 },
         };
 
-        // Ray starts outside at X=-1, aiming straight along +X into Y=6.5, Z=18.5
-        // We use 0.0001 for Y and Z to prevent Float NaN math (a standard engine edge-case fix)
         let ray = Ray {
             origin: V3 { x: -1.0, y: 6.5, z: 18.5 },
             direction: V3 { x: 1.0, y: 0.0001, z: 0.0001 },
         };
 
-        let result = find_intersection(&ray, &chunk, chunk.data[0]); // Start at index 0
+        let result = find_intersection(&ray, &chunk, chunk.data[0]); 
 
         assert!(result.is_some(), "Ray completely missed the deep voxel!");
         if let Some(intersect) = result {
             assert_eq!(intersect.voxel_data, 0xCAFE, "Hit the wrong voxel or extracted wrong data!");
         }
     }
-
     #[test]
     fn test_standard_cube() {
         // A 2x2x2 cube
