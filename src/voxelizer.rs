@@ -313,6 +313,31 @@ mod tests {
     }
 
     #[test]
+    fn line_intersects_with_plane_returns_intersection_point() {
+        let points = [
+            [-2.0, -4.0, 1.0],
+            [5.0, -2.0, 1.0]
+        ];
+        let axis = 0;
+        let plane_position = 2.0;
+
+        assert_eq!(line_intersect_point_with_plane(points[0], points[1], axis, plane_position), Some((2.0, -2.86, 1.0)))
+    }
+
+    #[test]
+    fn line_not_intersecting_with_plane_returns_none() {
+        let points = [
+            [5.0, -4.0, 1.0],
+            [5.0, -2.0, 1.0]
+        ];
+        let axis = 0;
+        let plane_position = 2.0;
+
+        assert_eq!(line_intersect_point_with_plane(points[0], points[1], axis, plane_position), None)
+        
+    }
+
+    #[test]
     fn triangle_pierces_positive_x_and_positive_y_faces_return_true() {
         let vertecies = [
             [0.0, 0.0, 0.0], 
