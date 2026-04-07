@@ -54,54 +54,61 @@ pub fn to_chunks(data: &[&[&[u32]]]) -> Vec<u32> {
 pub fn cast_ray(ray: &Ray, chunks: &HashMap<V3i, Chunk>, limit: u32) -> Option<IntersectionData> {
     let chunk_size = 32.0;
 
-    // 1. Initial chunk coordinates (Cleaned up via vecmath helpers)
     let origin_scaled = vec_div_scal(&ray.origin, chunk_size);
     let mut chunk_pos = vec_floor_to_v3i(&origin_scaled);
-
-    // Pre-calculate inverse directions as a V3
     let inv_dir = vec_inv_dir_dda(&ray.direction);
 
-    // 2. Initialization Phase
     let mut step = V3i { x: 0, y: 0, z: 0 };
     let mut t_max = V3 { x: 0.0, y: 0.0, z: 0.0 };
     let mut t_delta = V3 { x: 0.0, y: 0.0, z: 0.0 };
 
-    // X-Axis Setup
-    t_delta.x = (chunk_size * inv_dir.x).abs();
-    if ray.direction.x > 0.0 {
-        step.x = 1;
-        t_max.x = (((chunk_pos.x + 1) as f32 * chunk_size) - ray.origin.x) * inv_dir.x;
+    if ray.direction.x.abs() < f32::EPSILON {
+        step.x = 0;
+        t_delta.x = f32::INFINITY;
+        t_max.x = f32::INFINITY;
     } else {
-        step.x = -1;
-        t_max.x = (ray.origin.x - (chunk_pos.x as f32 * chunk_size)) * -inv_dir.x;
+        t_delta.x = (chunk_size * inv_dir.x).abs();
+        if ray.direction.x > 0.0 {
+            step.x = 1;
+            t_max.x = (((chunk_pos.x + 1) as f32 * chunk_size) - ray.origin.x) * inv_dir.x;
+        } else {
+            step.x = -1;
+            t_max.x = (ray.origin.x - (chunk_pos.x as f32 * chunk_size)) * -inv_dir.x;
+        }
     }
 
-    // Y-Axis Setup
-    t_delta.y = (chunk_size * inv_dir.y).abs();
-    if ray.direction.y > 0.0 {
-        step.y = 1;
-        t_max.y = (((chunk_pos.y + 1) as f32 * chunk_size) - ray.origin.y) * inv_dir.y;
+    if ray.direction.y.abs() < f32::EPSILON {
+        step.y = 0;
+        t_delta.y = f32::INFINITY;
+        t_max.y = f32::INFINITY;
     } else {
-        step.y = -1;
-        t_max.y = (ray.origin.y - (chunk_pos.y as f32 * chunk_size)) * -inv_dir.y;
+        t_delta.y = (chunk_size * inv_dir.y).abs();
+        if ray.direction.y > 0.0 {
+            step.y = 1;
+            t_max.y = (((chunk_pos.y + 1) as f32 * chunk_size) - ray.origin.y) * inv_dir.y;
+        } else {
+            step.y = -1;
+            t_max.y = (ray.origin.y - (chunk_pos.y as f32 * chunk_size)) * -inv_dir.y;
+        }
     }
 
-    // Z-Axis Setup
-    t_delta.z = (chunk_size * inv_dir.z).abs();
-    if ray.direction.z > 0.0 {
-        step.z = 1;
-        t_max.z = (((chunk_pos.z + 1) as f32 * chunk_size) - ray.origin.z) * inv_dir.z;
+    if ray.direction.z.abs() < f32::EPSILON {
+        step.z = 0;
+        t_delta.z = f32::INFINITY;
+        t_max.z = f32::INFINITY;
     } else {
-        step.z = -1;
-        t_max.z = (ray.origin.z - (chunk_pos.z as f32 * chunk_size)) * -inv_dir.z;
+        t_delta.z = (chunk_size * inv_dir.z).abs();
+        if ray.direction.z > 0.0 {
+            step.z = 1;
+            t_max.z = (((chunk_pos.z + 1) as f32 * chunk_size) - ray.origin.z) * inv_dir.z;
+        } else {
+            step.z = -1;
+            t_max.z = (ray.origin.z - (chunk_pos.z as f32 * chunk_size)) * -inv_dir.z;
+        }
     }
 
-    // 3. The Incremental Traversal Loop
-    // This perfectly matches Amanatides & Woo: exactly 2 float comparisons, 
-    // 1 float add, 2 integer comparisons, and 1 integer add per loop iteration. [cite: 609]
-    for _ in 0..limit {
+   for _ in 0..limit {
         
-        // We now use chunk_pos directly to query the HashMap
         if let Some(chunk) = chunks.get(&chunk_pos) {
             if !chunk.data.is_empty() {
                 let root_data = chunk.data[0]; 
@@ -112,7 +119,6 @@ pub fn cast_ray(ray: &Ray, chunks: &HashMap<V3i, Chunk>, limit: u32) -> Option<I
             }
         }
 
-        // Advance DDA exactly as outlined in the paper's 3D extension [cite: 572-608]
         if t_max.x < t_max.y {
             if t_max.x < t_max.z {
                 chunk_pos.x += step.x;
@@ -289,8 +295,98 @@ fn child_pop_count(data: u32, true_sub_voxel: u32) -> u32 {
 }
 
 #[cfg(test)]
-mod tests {
+mod macro_traversal_tests {
     use super::*;
+    use std::collections::HashMap;
+
+    fn create_test_chunk(cx: i32, cy: i32, cz: i32, payload: u32) -> Chunk {
+        let mut root_node_data: u32 = 0;
+        root_node_data |= 1 << 24; // Child 0 exists 
+        root_node_data |= 1 << 16; // Child 0 is leaf
+        root_node_data |= 1;       // Pointer to index 1
+
+        Chunk {
+            // Data now correctly holds the root pointer AND the leaf payload
+            data: vec![root_node_data, payload],
+            min_pos: V3 { x: (cx * 32) as f32, y: (cy * 32) as f32, z: (cz * 32) as f32 },
+            max_pos: V3 { x: ((cx + 1) * 32) as f32, y: ((cy + 1) * 32) as f32, z: ((cz + 1) * 32) as f32 },
+        }
+    }
+
+    #[test]
+    fn test_macro_dda_positive_axis() {
+        let mut chunks = HashMap::new();
+        chunks.insert(V3i { x: 3, y: 0, z: 0 }, create_test_chunk(3, 0, 0, 0x1111));
+
+        let ray = Ray {
+            origin: V3 { x: 1.0, y: 1.0, z: 1.0 }, 
+            direction: V3 { x: 1.0, y: 0.0, z: 0.0 }, 
+        };
+
+        let result = cast_ray(&ray, &chunks, 10);
+        
+        assert!(result.is_some(), "Ray failed to cross empty chunks to hit target.");
+        if let Some(hit) = result {
+            assert_eq!(hit.voxel_data, 0x1111, "Ray hit something, but not the target chunk data.");
+        }
+    }
+
+    #[test]
+    fn test_macro_dda_ray_limit() {
+        let mut chunks = HashMap::new();
+        chunks.insert(V3i { x: 5, y: 0, z: 0 }, create_test_chunk(5, 0, 0, 0x2222));
+
+        let ray = Ray {
+            origin: V3 { x: 1.0, y: 1.0, z: 1.0 }, 
+            direction: V3 { x: 1.0, y: 0.0, z: 0.0 }, 
+        };
+
+        let result = cast_ray(&ray, &chunks, 3);
+        assert!(result.is_none(), "Ray should have stopped due to step limit, but continued.");
+    }
+
+    #[test]
+    fn test_macro_dda_negative_diagonal() {
+        let mut chunks = HashMap::new();
+        
+        let mut root_node_data: u32 = 0;
+        root_node_data |= 1_u32 << 31; // Child 7 exists
+        root_node_data |= 1 << 23;     // Child 7 is leaf
+        root_node_data |= 1;           // Pointer to index 1
+
+        let target_chunk = Chunk {
+            data: vec![root_node_data, 0x3333], // Correctly structured payload
+            min_pos: V3 { x: -64.0, y: -64.0, z: -64.0 }, 
+            max_pos: V3 { x: -32.0, y: -32.0, z: -32.0 },
+        };
+        chunks.insert(V3i { x: -2, y: -2, z: -2 }, target_chunk);
+
+        let ray = Ray {
+            origin: V3 { x: 40.0, y: 40.0, z: 40.0 }, 
+            direction: V3 { x: -0.577, y: -0.577, z: -0.577 }, 
+        };
+
+        let result = cast_ray(&ray, &chunks, 20);
+        
+        assert!(result.is_some(), "Failed to traverse diagonally backwards across chunk boundaries.");
+        if let Some(hit) = result {
+            assert_eq!(hit.voxel_data, 0x3333);
+        }
+    }
+
+    #[test]
+    fn test_macro_dda_grazing_edge() {
+        let mut chunks = HashMap::new();
+        chunks.insert(V3i { x: 1, y: 1, z: 0 }, create_test_chunk(1, 1, 0, 0x4444));
+
+        let ray = Ray {
+            origin: V3 { x: 0.1, y: 0.1, z: 1.0 }, 
+            direction: V3 { x: std::f32::consts::FRAC_1_SQRT_2 , y: std::f32::consts::FRAC_1_SQRT_2, z: 0.0 }, 
+        };
+
+        let result = cast_ray(&ray, &chunks, 5);
+        assert!(result.is_some(), "Ray grazing a chunk corner failed to enter the adjacent chunk.");
+    }
 
     #[test]
     fn test_bitwise_packing() {
