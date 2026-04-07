@@ -132,8 +132,20 @@ fn triangle_edge_pierces_cube_face(vertecies: [[f32; 3]; 3], cube_center: [f32; 
     todo!();
 }
 
-fn line_intersect_point_with_plane(point1: [f32; 3], point2: [f32; 3], axis: usize, plane_axis_value: f32) -> Option<(f32, f32, f32)> {
-    todo!();
+fn line_intersect_point_with_plane(point1: [f32; 3], point2: [f32; 3], axis: usize, plane_axis_value: f32) -> Option<[f32; 3]> {
+    if point1[axis] == point2[axis] { return None; }
+
+    let alpha = (plane_axis_value - point2[axis]) / (point1[axis] - point2[axis]);
+    if alpha < 0.0 || alpha > 1.0 { return None; }
+
+    let x = (alpha * point1[0]) + ((1.0 - alpha) * point2[0]);
+    let y = (alpha * point1[1]) + ((1.0 - alpha) * point2[1]);
+    let z = (alpha * point1[2]) + ((1.0 - alpha) * point2[2]);
+
+    let mut vertex = [x, y, z];
+    vertex[axis] = plane_axis_value;
+
+    return Some(vertex)
 }
 
 #[cfg(test)]
@@ -321,7 +333,7 @@ mod tests {
         let axis = 0;
         let plane_position = 2.0;
 
-        assert_eq!(line_intersect_point_with_plane(points[0], points[1], axis, plane_position), Some((2.0, -2.86, 1.0)))
+        assert_eq!(line_intersect_point_with_plane(points[0], points[1], axis, plane_position), Some([2.0, -2.857143, 1.0]))
     }
 
     #[test]
