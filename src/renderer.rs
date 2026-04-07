@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::vecmath::*;
 use crate::octree::*;
 
@@ -20,7 +22,7 @@ pub fn default_color(buffer: &mut [u32], width: u32, height: u32) {
     }
 }
 
-pub fn raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, player: Player, chunk: &Chunk) {
+pub fn raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, player: Player, chunks: &HashMap<V3i, Chunk>) {
 
     let aspect_ratio = width as f32/height as f32;
 
@@ -36,7 +38,6 @@ pub fn raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, player: 
     };
 
     let right_vec = vec_normalize(&vec_crossp(&global_up, &forward_vec));
-
     let up_vec = vec_normalize(&vec_crossp(&forward_vec, &right_vec));
 
     let top_left_vec = vec_add(
@@ -58,12 +59,11 @@ pub fn raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, player: 
         let y_offset = vec_mult_scal(&delta_y, y);
 
         let big_ray_dir = vec_add(&top_left_vec, &vec_add(&x_offset, &y_offset));
-
         let ray_dir = vec_normalize(&big_ray_dir);
 
         let ray = Ray { origin: player.position, direction: ray_dir };
 
-        let intersection = find_intersection(&ray, chunk, chunk.data[0]);
+        let intersection = cast_ray(&ray, chunks, 32);
 
         if let Some(hit) = intersection {
             let b = get_ending(hit.voxel_data);
@@ -74,7 +74,7 @@ pub fn raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, player: 
                 _ => 0xFFFFFF, // White
             };
         } else {
-            *pixel = 0; // Your gray/blue background
+            *pixel = 0;  
         }
     }
 }
