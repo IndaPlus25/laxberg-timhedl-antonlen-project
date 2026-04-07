@@ -5,6 +5,13 @@ pub struct V3 {
     pub z: f32,
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct V3i {
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+}
+
 #[derive(Copy, Clone)]
 pub struct Ray {
     pub origin: V3,
@@ -40,29 +47,36 @@ pub fn vec_div(v1: &V3, v2: &V3) -> V3 {
     }
 }
 
-pub fn vec_mult_scal(v1: &V3, n: f32) -> V3 {
+pub fn vec_div_scal(v: &V3, n: f32) -> V3 {
+    V3 {
+        x: v.x / n,
+        y: v.y / n,
+        z: v.z / n,
+    }   
+}
+
+pub fn vec_mult_scal(v: &V3, n: f32) -> V3 {
     V3{
-        x: v1.x * n,
-        y: v1.y * n,
-        z: v1.z * n,
+        x: v.x * n,
+        y: v.y * n,
+        z: v.z * n,
     }
 }
 
-//Buildning the 3 bit intersection identifier (000 - 0(left/right)0(bottom/top)0(fron/back))
-pub fn vec_entry_plane(v1: &V3) -> u32 {
-    if v1.x > v1.y && v1.x > v1.z {
+pub fn vec_entry_plane(v: &V3) -> u32 {
+    if v.x > v.y && v.x > v.z {
         0 //YZ plane
-    } else if v1.y > v1.x && v1.y > v1.z {
+    } else if v.y > v.x && v.y > v.z {
         1 //XZ plane
     } else {
         2 //XY plane
     }
 }
 
-pub fn vec_exit_plane(v1: &V3) -> u32 {
-    if v1.x < v1.y && v1.x < v1.z {
+pub fn vec_exit_plane(v: &V3) -> u32 {
+    if v.x < v.y && v.x < v.z {
         0 //YZ
-    } else if v1.y < v1.x && v1.y < v1.z {
+    } else if v.y < v.x && v.y < v.z {
         1 //XZ
     } else {
         2 //XY
@@ -88,6 +102,22 @@ pub fn vec_crossp(v1: &V3, v2: &V3) -> V3 {
         x: v1.y * v2.z - v1.z * v2.y,
         y: v1.z * v2.x - v1.x * v2.z,
         z: v1.x * v2.y - v1.y * v2.x
+    }
+}
+
+pub fn vec_floor_to_v3i(v: &V3) -> V3i {
+    V3i {
+        x: v.x.floor() as i32,
+        y: v.y.floor() as i32,
+        z: v.z.floor() as i32,
+    }
+}
+
+pub fn vec_inv_dir_dda(v: &V3) -> V3 {
+    V3 {
+        x: if v.x.abs() > 1e-8 { 1.0 / v.x } else { f32::INFINITY },
+        y: if v.y.abs() > 1e-8 { 1.0 / v.y } else { f32::INFINITY },
+        z: if v.z.abs() > 1e-8 { 1.0 / v.z } else { f32::INFINITY },
     }
 }
 

@@ -1,5 +1,7 @@
 use crate::vecmath::*;
 
+use std::collections::HashMap;
+
 //32x32x32 octree optimized chunk
 pub struct Chunk {
     //first 8 bits are bools for children(1) existing in each of the 8 positions. Z-order curve
@@ -49,6 +51,89 @@ pub fn to_chunks(data: &[&[&[u32]]]) -> Vec<u32> {
     flat_data
 }
 
+pub fn cast_ray(ray: &Ray, chunks: &HashMap<V3i, Chunk>, limit: u32) -> Option<IntersectionData> {
+    let chunk_size = 32.0;
+
+    // 1. Initial chunk coordinates (Cleaned up via vecmath helpers)
+    let origin_scaled = vec_div_scal(&ray.origin, chunk_size);
+    let mut chunk_pos = vec_floor_to_v3i(&origin_scaled);
+
+    // Pre-calculate inverse directions as a V3
+    let inv_dir = vec_inv_dir_dda(&ray.direction);
+
+    // 2. Initialization Phase
+    let mut step = V3i { x: 0, y: 0, z: 0 };
+    let mut t_max = V3 { x: 0.0, y: 0.0, z: 0.0 };
+    let mut t_delta = V3 { x: 0.0, y: 0.0, z: 0.0 };
+
+    // X-Axis Setup
+    t_delta.x = (chunk_size * inv_dir.x).abs();
+    if ray.direction.x > 0.0 {
+        step.x = 1;
+        t_max.x = (((chunk_pos.x + 1) as f32 * chunk_size) - ray.origin.x) * inv_dir.x;
+    } else {
+        step.x = -1;
+        t_max.x = (ray.origin.x - (chunk_pos.x as f32 * chunk_size)) * -inv_dir.x;
+    }
+
+    // Y-Axis Setup
+    t_delta.y = (chunk_size * inv_dir.y).abs();
+    if ray.direction.y > 0.0 {
+        step.y = 1;
+        t_max.y = (((chunk_pos.y + 1) as f32 * chunk_size) - ray.origin.y) * inv_dir.y;
+    } else {
+        step.y = -1;
+        t_max.y = (ray.origin.y - (chunk_pos.y as f32 * chunk_size)) * -inv_dir.y;
+    }
+
+    // Z-Axis Setup
+    t_delta.z = (chunk_size * inv_dir.z).abs();
+    if ray.direction.z > 0.0 {
+        step.z = 1;
+        t_max.z = (((chunk_pos.z + 1) as f32 * chunk_size) - ray.origin.z) * inv_dir.z;
+    } else {
+        step.z = -1;
+        t_max.z = (ray.origin.z - (chunk_pos.z as f32 * chunk_size)) * -inv_dir.z;
+    }
+
+    // 3. The Incremental Traversal Loop
+    // This perfectly matches Amanatides & Woo: exactly 2 float comparisons, 
+    // 1 float add, 2 integer comparisons, and 1 integer add per loop iteration. [cite: 609]
+    for _ in 0..limit {
+        
+        // We now use chunk_pos directly to query the HashMap
+        if let Some(chunk) = chunks.get(&chunk_pos) {
+            if !chunk.data.is_empty() {
+                let root_data = chunk.data[0]; 
+                
+                if let Some(hit) = find_intersection(ray, chunk, root_data) {
+                    return Some(hit);
+                }
+            }
+        }
+
+        // Advance DDA exactly as outlined in the paper's 3D extension [cite: 572-608]
+        if t_max.x < t_max.y {
+            if t_max.x < t_max.z {
+                chunk_pos.x += step.x;
+                t_max.x += t_delta.x;
+            } else {
+                chunk_pos.z += step.z;
+                t_max.z += t_delta.z;
+            }
+        } else {
+            if t_max.y < t_max.z {
+                chunk_pos.y += step.y;
+                t_max.y += t_delta.y;
+            } else {
+                chunk_pos.z += step.z;
+                t_max.z += t_delta.z;
+            }
+        }
+    }
+
+    None 
+}
 pub fn find_intersection(ray: &Ray, chunk: &Chunk, current: u32) -> Option<IntersectionData> {
 
     let mut direction_mask: u32 = 0;
