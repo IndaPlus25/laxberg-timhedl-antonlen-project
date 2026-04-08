@@ -1,6 +1,7 @@
 mod octree;
 mod vecmath;
 mod renderer;
+mod builder;
 
 use std::collections::HashMap;
 use std::num::NonZeroU32;
@@ -15,6 +16,7 @@ use std::time::Instant;
 use crate::vecmath::*;
 use crate::renderer::*;
 use crate::octree::*;
+use crate::builder::*;
 
 struct App {
     window: Option<Rc<Window>>,

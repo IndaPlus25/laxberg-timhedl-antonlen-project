@@ -25,31 +25,7 @@ pub struct FlatChunk {
 
 }
 
-pub fn to_chunks(data: &[&[&[u32]]]) -> Vec<u32> {
-    let width = data.len();
-    let height = if width > 0 { data[0].len() } else { 0 };
-    let depth = if height > 0 { data[0][0].len() } else { 0 };
 
-    let total_size = width * height * depth;
-
-    let mut flat_data = vec![0; total_size];
-
-    for x in 0..width {
-        for y in 0..height {
-            for z in 0..depth {
-                let block = data[x][y][z];
-                
-                if block != 0 {
-                    let index = (x * height * depth) + (y * depth) + z;
-                    
-                    flat_data[index] = block;
-                }
-            }
-        }
-    }
-
-    flat_data
-}
 
 pub fn cast_ray(ray: &Ray, chunks: &HashMap<V3i, Chunk>, limit: u32) -> Option<IntersectionData> {
     let chunk_size = 32.0;
