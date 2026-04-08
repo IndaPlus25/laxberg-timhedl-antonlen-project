@@ -26,6 +26,7 @@ struct App {
 
     last_fps_update: Instant,
     frames_this_second: u32,
+    player: Player,
 }
 
 fn main() {
@@ -40,6 +41,15 @@ fn main() {
     let chunks = to_chunks(&world_data);
     println!("Successfully built {} chunks!", chunks.len());
 
+    let player = Player {
+        position: V3{
+            x: 128.1,
+            y: 128.1,
+            z: 128.1,
+        },
+        direction: (0.0, -0.5)               
+    };
+
     let mut app = App {
         window: None,
         surface: None,
@@ -47,6 +57,8 @@ fn main() {
 
         last_fps_update: Instant::now(),
         frames_this_second: 0,
+
+        player,
     };
 
     println!("Launching Raycaster...");
@@ -92,16 +104,10 @@ impl ApplicationHandler for App {
 
                     let fov = std::f32::consts::PI / 2.0;
 
-                    let player = Player {
-                        position: V3{
-                            x: 128.0,
-                            y: 200.0,
-                            z: -40.0,
-                        },
-                        direction: (0.0, -0.5)               
-                    };
 
-                    raycaster(&mut buffer, width, height, fov, player, &self.chunks);
+                    raycaster(&mut buffer, width, height, fov, &self.player, &self.chunks);
+
+                    self.player.direction.0 += 0.01;
                     
                     buffer.present().unwrap();
 

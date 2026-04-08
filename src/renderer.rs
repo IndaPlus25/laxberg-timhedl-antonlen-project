@@ -22,7 +22,7 @@ pub fn default_color(buffer: &mut [u32], width: u32, height: u32) {
     }
 }
 
-pub fn raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, player: Player, chunks: &HashMap<V3i, Chunk>) {
+pub fn raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, player: &Player, chunks: &HashMap<V3i, Chunk>) {
 
     let aspect_ratio = width as f32/height as f32;
 
