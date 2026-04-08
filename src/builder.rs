@@ -14,7 +14,7 @@ struct SvoChild {
     pos: V3i,
 }
 
-pub fn to_chunks(data: &[&[&[u32]]]) -> HashMap<V3i, Chunk> {
+pub fn to_chunks(data: &[Vec<Vec<u32>>]) -> HashMap<V3i, Chunk> {
     let width = data.len();
     let height = if width > 0 { data[0].len() } else { 0 };
     let depth = if height > 0 { data[0][0].len() } else { 0 };
@@ -64,7 +64,7 @@ pub fn to_chunks(data: &[&[&[u32]]]) -> HashMap<V3i, Chunk> {
 }
 
 /// Standalone function to extract a 32x32x32 flat array from a global coordinate
-pub fn extract_hot_chunk(data: &[&[&[u32]]], chunk_pos: &V3i) -> Option<Vec<u32>> {
+pub fn extract_hot_chunk(data: &[Vec<Vec<u32>>], chunk_pos: &V3i) -> Option<Vec<u32>> {
     let width = data.len() as i32;
     let height = if width > 0 { data[0].len() as i32 } else { 0 };
     let depth = if height > 0 { data[0][0].len() as i32 } else { 0 };
@@ -248,34 +248,33 @@ fn scan_children_for_serialization(pyramid: &[Vec<u32>; 6], child_level: usize, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vecmath::{V3i};
-
-    // --- 1. EXTRACT_HOT_CHUNK TESTS ---
+    use crate::vecmath::V3i;
 
     #[test]
     fn test_extract_hot_chunk_empty_and_oob() {
-        // A 2x2x2 grid of pure air (0)
-        let z_slice: &[u32] = &[0, 0];
-        let y_slice: &[&[u32]] = &[z_slice, z_slice];
-        let data: &[&[&[u32]]] = &[y_slice, y_slice];
+        // A 2x2x2 grid of pure air (0) using Vecs
+        let data = vec![
+            vec![vec![0, 0], vec![0, 0]],
+            vec![vec![0, 0], vec![0, 0]],
+        ];
 
         // Should return None because there are no solid voxels
-        let result = extract_hot_chunk(data, &V3i { x: 0, y: 0, z: 0 });
+        let result = extract_hot_chunk(&data, &V3i { x: 0, y: 0, z: 0 });
         assert!(result.is_none(), "Chunk should be completely empty");
 
         // Requesting a chunk completely outside the data bounds
-        let oob_result = extract_hot_chunk(data, &V3i { x: 1, y: 0, z: 0 });
+        let oob_result = extract_hot_chunk(&data, &V3i { x: 1, y: 0, z: 0 });
         assert!(oob_result.is_none(), "Out of bounds chunk should be handled and return None");
     }
 
     #[test]
     fn test_extract_hot_chunk_partial_data() {
         // A 1x1x1 grid containing a single voxel of type '42'
-        let z_slice: &[u32] = &[42];
-        let y_slice: &[&[u32]] = &[z_slice];
-        let data: &[&[&[u32]]] = &[y_slice];
+        let data = vec![
+            vec![vec![42]]
+        ];
 
-        let result = extract_hot_chunk(data, &V3i { x: 0, y: 0, z: 0 })
+        let result = extract_hot_chunk(&data, &V3i { x: 0, y: 0, z: 0 })
             .expect("Chunk should contain data");
 
         assert_eq!(result.len(), 32768, "Hot chunk must always be exactly 32,768 elements");
@@ -287,23 +286,14 @@ mod tests {
 
     #[test]
     fn test_build_chunk_solid_volume() {
-        // A chunk entirely filled with material '77'
         let flat_data = vec![77; 32768];
         let svo = build_chunk(&flat_data);
 
-        // A fully solid chunk should compress into exactly 9 elements:
-        // 1 Root Branch + 8 identical leaf children. 
-        // (The root always divides the 32x32x32 space into 8 16x16x16 spaces)
         assert_eq!(svo.len(), 9, "Solid chunk should compress perfectly into 9 nodes");
 
-        // Root Node (Index 0): 
-        // Child mask: 0xFF (All 8 exist)
-        // Leaf mask: 0xFF (All 8 are leaves)
-        // Pointer: 1 (Children start at index 1)
         let expected_root = (0xFF << 24) | (0xFF << 16) | 1;
         assert_eq!(svo[0], expected_root, "Root node bitmask or pointer is incorrect");
 
-        // Validate the 8 children
         for i in 1..9 {
             assert_eq!(svo[i], 77, "Child node should contain the raw material payload");
         }
@@ -311,32 +301,19 @@ mod tests {
 
     #[test]
     fn test_build_chunk_single_voxel_at_origin() {
-        // A chunk with only ONE voxel at the very bottom-left-near corner (0,0,0)
         let mut flat_data = vec![0; 32768];
-        flat_data[0] = 99; // Voxel type 99 at index 0
+        flat_data[0] = 99; 
 
         let svo = build_chunk(&flat_data);
 
-        // Since it's one voxel, the tree must branch all the way down to level 5.
-        // It requires exactly 6 nodes: Root -> L1 -> L2 -> L3 -> L4 -> Leaf.
         assert_eq!(svo.len(), 6, "Single voxel path should take exactly 6 nodes");
-
-        // At every level, only child 0 (bit 1) exists.
         assert_eq!(svo[0], (1 << 24) | (0 << 16) | 1, "Root should point to L1");
-        assert_eq!(svo[1], (1 << 24) | (0 << 16) | 2, "L1 should point to L2");
-        assert_eq!(svo[2], (1 << 24) | (0 << 16) | 3, "L2 should point to L3");
-        assert_eq!(svo[3], (1 << 24) | (0 << 16) | 4, "L3 should point to L4");
-        
-        // Level 4's child is the actual voxel, so its leaf mask must be 1.
         assert_eq!(svo[4], (1 << 24) | (1 << 16) | 5, "L4 should point to Leaf with Leaf Mask applied");
-        
-        // Level 5 (Leaf Payload)
         assert_eq!(svo[5], 99, "Final node should be the voxel payload");
     }
 
     #[test]
     fn test_build_chunk_single_voxel_at_extremity() {
-        // A chunk with ONE voxel at the absolute opposite corner (31, 31, 31)
         let mut flat_data = vec![0; 32768];
         let last_idx = 31 + (31 * 32) + (31 * 1024);
         flat_data[last_idx] = 42; 
@@ -344,13 +321,7 @@ mod tests {
         let svo = build_chunk(&flat_data);
 
         assert_eq!(svo.len(), 6);
-
-        // At every level, only the 8th child (child index 7) exists.
-        // Bit 7 is 128 (10000000 in binary).
         assert_eq!(svo[0], (128 << 24) | (0 << 16) | 1, "Root should branch at child 7");
-        assert_eq!(svo[1], (128 << 24) | (0 << 16) | 2, "L1 should branch at child 7");
-        assert_eq!(svo[2], (128 << 24) | (0 << 16) | 3, "L2 should branch at child 7");
-        assert_eq!(svo[3], (128 << 24) | (0 << 16) | 4, "L3 should branch at child 7");
         assert_eq!(svo[4], (128 << 24) | (128 << 16) | 5, "L4 should point to Leaf at child 7");
         assert_eq!(svo[5], 42, "Final node should be the voxel payload");
     }
@@ -360,75 +331,57 @@ mod tests {
     #[test]
     fn test_to_chunks_boundary_split() {
         // We create a mocked 33x1x1 grid filled with material 5.
-        // Because the width is 33, it crosses the 32-voxel chunk boundary.
-        // This should result in exactly TWO chunks being generated.
-        
-        let z_dim: Vec<u32> = vec![5];
-        let y_dim: Vec<&[u32]> = vec![z_dim.as_slice()];
-        let x_dim: Vec<&[&[u32]]> = vec![y_dim.as_slice(); 33];
-        let data = x_dim.as_slice();
+        // vec![element; count] is a great shortcut for this.
+        let data = vec![vec![vec![5]]; 33];
 
-        let chunks = to_chunks(data);
+        let chunks = to_chunks(&data);
 
         assert_eq!(chunks.len(), 2, "A 33-wide volume must be split into exactly 2 chunks");
 
-        // Verify Chunk 1 (0, 0, 0)
         let chunk_main = chunks.get(&V3i { x: 0, y: 0, z: 0 }).expect("Main chunk missing");
         assert_eq!(chunk_main.min_pos.x, 0.0);
         assert_eq!(chunk_main.max_pos.x, 32.0);
-        
-        // Because it is a 32x1x1 sliver, it is NOT fully uniform. It will have compressed branches.
-        // We won't test the exact bit-math here, just that it populated.
         assert!(chunk_main.data.len() > 1);
 
-        // Verify Chunk 2 (1, 0, 0)
         let chunk_overflow = chunks.get(&V3i { x: 1, y: 0, z: 0 }).expect("Overflow chunk missing");
         assert_eq!(chunk_overflow.min_pos.x, 32.0);
         assert_eq!(chunk_overflow.max_pos.x, 64.0);
-        
-        // This chunk only has 1 voxel (at local 0,0,0), so it should have exactly 6 nodes.
         assert_eq!(chunk_overflow.data.len(), 6, "Overflow chunk with 1 voxel should have 6 nodes");
     }
 
     #[test]
     fn test_standard_cube_fits_in_one_chunk() {
         // A 2x2x2 cube
-        let data: &[&[&[u32]]] = &[
-            &[
-                &[1, 0], // y = 0
-                &[0, 2], // y = 1
+        let data = vec![
+            vec![
+                vec![1, 0], // y = 0
+                vec![0, 2], // y = 1
             ],
-            &[
-                &[0, 3], // y = 0
-                &[4, 0], // y = 1
+            vec![
+                vec![0, 3], // y = 0
+                vec![4, 0], // y = 1
             ],
         ];
 
-        let result = to_chunks(data);
+        let result = to_chunks(&data);
         
-        // The entire 2x2x2 volume fits into exactly one 32x32x32 chunk
         assert_eq!(result.len(), 1, "Should generate exactly 1 chunk");
-        
-        // Verify the chunk is located at origin (0,0,0)
         let chunk = result.get(&V3i { x: 0, y: 0, z: 0 }).expect("Chunk at origin should exist");
-        
-        // We know it shouldn't be empty, so the SVO data must have populated
         assert!(!chunk.data.is_empty(), "Chunk SVO data should not be empty");
     }
 
     #[test]
     fn test_asymmetrical_dimensions() {
         // Width = 1, Height = 2, Depth = 3
-        let data: &[&[&[u32]]] = &[
-            &[
-                &[1, 2, 3], // y = 0
-                &[0, 5, 0], // y = 1
+        let data = vec![
+            vec![
+                vec![1, 2, 3], // y = 0
+                vec![0, 5, 0], // y = 1
             ]
         ];
 
-        let result = to_chunks(data);
+        let result = to_chunks(&data);
         
-        // Even asymmetrical data under 32x32x32 fits in one chunk
         assert_eq!(result.len(), 1, "Asymmetrical data should fit in 1 chunk");
         assert!(result.contains_key(&V3i { x: 0, y: 0, z: 0 }));
     }
@@ -436,29 +389,26 @@ mod tests {
     #[test]
     fn test_single_element() {
         // Width = 1, Height = 1, Depth = 1
-        let data: &[&[&[u32]]] = &[
-            &[
-                &[42]
+        let data = vec![
+            vec![
+                vec![42]
             ]
         ];
 
-        let result = to_chunks(data);
+        let result = to_chunks(&data);
         
         assert_eq!(result.len(), 1);
         let chunk = result.get(&V3i { x: 0, y: 0, z: 0 }).unwrap();
-        
-        // A single voxel will result in a 6-node deep tree (Root -> L1 -> L2 -> L3 -> L4 -> Leaf)
         assert_eq!(chunk.data.len(), 6, "A single voxel chunk should compress to 6 nodes");
     }
 
     #[test]
     fn test_empty_data() {
         // Width = 0
-        let data: &[&[&[u32]]] = &[];
+        let data: Vec<Vec<Vec<u32>>> = vec![];
 
-        let result = to_chunks(data);
+        let result = to_chunks(&data);
         
-        // If there is no data, the work distributor should create 0 chunks
         assert_eq!(result.len(), 0);
         assert!(result.is_empty());
     }

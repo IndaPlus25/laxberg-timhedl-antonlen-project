@@ -2,6 +2,7 @@ mod octree;
 mod vecmath;
 mod renderer;
 mod builder;
+mod worldgen;
 
 use std::collections::HashMap;
 use std::num::NonZeroU32;
@@ -32,27 +33,12 @@ fn main() {
 
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let mut tree_data = vec![0_u32; 40];
+    println!("Generating random world data...");
+    let world_data = worldgen::generate_random_world(256, 256, 256, 0.01, 4);
 
-    tree_data[0] = (73 << 24) | (72 << 16) | 1; 
-    tree_data[1] = (128 << 24) | (128 << 16) | 4; 
-    tree_data[2] = 2; 
-    tree_data[3] = 3; 
-    tree_data[4] = 1;
-
-    let mut chunks = HashMap::new();
-
-    for cx in -3..=3 {
-        for cz in -3..=3 {
-            let chunk_pos = V3i { x: cx, y: 0, z: cz };
-            let chunk = Chunk {
-                data: tree_data.clone(),
-                min_pos: V3 { x: cx as f32 * 32.0, y: 0.0, z: cz as f32 * 32.0 },
-                max_pos: V3 { x: (cx + 1) as f32 * 32.0, y: 32.0, z: (cz + 1) as f32 * 32.0 },
-            };
-            chunks.insert(chunk_pos, chunk);
-        }
-    }
+    println!("Compressing world into Sparse Voxel Octrees...");
+    let chunks = to_chunks(&world_data);
+    println!("Successfully built {} chunks!", chunks.len());
 
     let mut app = App {
         window: None,
@@ -63,6 +49,7 @@ fn main() {
         frames_this_second: 0,
     };
 
+    println!("Launching Raycaster...");
     let _ = event_loop.run_app(&mut app);
 }
 
@@ -107,11 +94,11 @@ impl ApplicationHandler for App {
 
                     let player = Player {
                         position: V3{
-                            x: -16.0,
-                            y: 45.0,
-                            z: -16.0,
+                            x: 128.0,
+                            y: 200.0,
+                            z: -40.0,
                         },
-                        direction: (std::f32::consts::PI / 1.5, -0.4)               
+                        direction: (0.0, -0.5)               
                     };
 
                     raycaster(&mut buffer, width, height, fov, player, &self.chunks);

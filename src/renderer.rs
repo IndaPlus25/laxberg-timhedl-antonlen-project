@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use rayon::prelude::*;
-
 use crate::vecmath::*;
 use crate::octree::*;
 
