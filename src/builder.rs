@@ -3,6 +3,17 @@ use crate::vecmath::*;
 
 use std::collections::HashMap;
 
+use std::collections::VecDeque;
+
+const BRANCH_MARKER: u32 = u32::MAX;
+const AIR_MARKER: u32 = 0;
+
+struct SvoChild {
+    is_leaf: bool,
+    payload: u32,
+    pos: V3i,
+}
+
 pub fn to_chunks(data: &[&[&[u32]]]) -> HashMap<V3i, Chunk> {
     let width = data.len();
     let height = if width > 0 { data[0].len() } else { 0 };
@@ -52,6 +63,7 @@ pub fn to_chunks(data: &[&[&[u32]]]) -> HashMap<V3i, Chunk> {
     chunks
 }
 
+/// Standalone function to extract a 32x32x32 flat array from a global coordinate
 pub fn extract_hot_chunk(data: &[&[&[u32]]], chunk_pos: &V3i) -> Option<Vec<u32>> {
     let width = data.len() as i32;
     let height = if width > 0 { data[0].len() as i32 } else { 0 };
@@ -71,16 +83,19 @@ pub fn extract_hot_chunk(data: &[&[&[u32]]], chunk_pos: &V3i) -> Option<Vec<u32>
                     z: (chunk_pos.z * 32) + local_pos.z,
                 };
 
-                // Bounds check against the main data array
-                if global_pos.x < width && global_pos.y < height && global_pos.z < depth {
-                    let voxel = data[global_pos.x as usize][global_pos.y as usize][global_pos.z as usize];
-                    
-                    if voxel != 0 {
-                        is_empty = false;
-                        let idx = local_pos.x + (local_pos.y * 32) + (local_pos.z * 1024);
-                        flat_data[idx as usize] = voxel;
-                    }
+                if global_pos.x >= width || global_pos.y >= height || global_pos.z >= depth {
+                    continue;
                 }
+
+                let voxel = data[global_pos.x as usize][global_pos.y as usize][global_pos.z as usize];
+                
+                if voxel == 0 {
+                    continue;
+                }
+
+                is_empty = false;
+                let idx = local_pos.x + (local_pos.y * 32) + (local_pos.z * 1024);
+                flat_data[idx as usize] = voxel;
             }
         }
     }
@@ -93,8 +108,7 @@ pub fn extract_hot_chunk(data: &[&[&[u32]]], chunk_pos: &V3i) -> Option<Vec<u32>
 }
 
 pub fn build_chunk(flat_data: &[u32]) -> Vec<u32> {
-    // Represents the side length of the volume at each depth level.
-    let volumes = [1, 2, 4, 8, 16, 32];
+    let level_volume = [1, 2, 4, 8, 16, 32];
     
     let mut pyramid: [Vec<u32>; 6] = [
         vec![0; 1],
@@ -105,109 +119,94 @@ pub fn build_chunk(flat_data: &[u32]) -> Vec<u32> {
         flat_data.to_vec(),
     ];
     
-    // --- PHASE 1: BOTTOM-UP MIPMAP PRUNING ---
+    // Step 1: Compress the volume from the bottom up
+    build_mipmap_pyramid(&mut pyramid, &level_volume);
+    
+    // Step 2: Write the compressed pyramid into the final 1D SVO format
+    serialize_svo_bfs(&pyramid, &level_volume)
+}
+
+fn build_mipmap_pyramid(pyramid: &mut [Vec<u32>; 6], volumes: &[i32; 6]) {
     for level in (0..5).rev() { 
-        let current_vol = volumes[level];
-        let child_vol = volumes[level + 1];
+        let current_volume = volumes[level];
+        let child_volume = volumes[level + 1];
+        let child_level = level + 1;
         
-        for z in 0..current_vol {
-            for y in 0..current_vol {
-                for x in 0..current_vol {
+        for z in 0..current_volume {
+            for y in 0..current_volume {
+                for x in 0..current_volume {
                     let pos = V3i { x, y, z };
                     
-                    let mut all_identical = true;
-                    let mut first_val = None;
+                    // Abstract away the 8-child check
+                    let pruned_value = check_if_prunable(pyramid, child_level, child_volume, &pos);
                     
-                    for i in 0..8 {
-                        let child_pos = V3i {
-                            x: (pos.x * 2) + (i & 1),
-                            y: (pos.y * 2) + ((i >> 1) & 1),
-                            z: (pos.z * 2) + ((i >> 2) & 1),
-                        };
-                        
-                        let child_idx = child_pos.x + (child_pos.y * child_vol) + (child_pos.z * child_vol * child_vol);
-                        let val = pyramid[level + 1][child_idx as usize];
-                        
-                        if val == u32::MAX { 
-                            all_identical = false;
-                            break;
-                        }
-                        
-                        if let Some(first) = first_val {
-                            if first != val {
-                                all_identical = false;
-                                break;
-                            }
-                        } else {
-                            first_val = Some(val);
-                        }
-                    }
-                    
-                    let idx = pos.x + (pos.y * current_vol) + (pos.z * current_vol * current_vol);
-                    
-                    if all_identical {
-                        pyramid[level][idx as usize] = first_val.unwrap_or(0);
-                    } else {
-                        pyramid[level][idx as usize] = u32::MAX;
-                    }
+                    let idx = pos.x + (pos.y * current_volume) + (pos.z * current_volume * current_volume);
+                    pyramid[level][idx as usize] = pruned_value;
                 }
             }
         }
     }
+}
+
+/// Checks the 8 children of a parent node. 
+/// Returns a single voxel payload if they are identical, or BRANCH_MARKER if they differ.
+fn check_if_prunable(pyramid: &[Vec<u32>; 6], child_level: usize, child_volume: i32, parent_pos: &V3i) -> u32 {
+    let mut first_val = None;
+
+    for i in 0..8 {
+        let child_pos = V3i {
+            x: (parent_pos.x * 2) + (i & 1),
+            y: (parent_pos.y * 2) + ((i >> 1) & 1),
+            z: (parent_pos.z * 2) + ((i >> 2) & 1),
+        };
+        
+        let child_idx = child_pos.x + (child_pos.y * child_volume) + (child_pos.z * child_volume * child_volume);
+        let val = pyramid[child_level][child_idx as usize];
+
+        if val == BRANCH_MARKER { 
+            return BRANCH_MARKER;
+        }
+
+        if let Some(first) = first_val {
+            if first != val {
+                return BRANCH_MARKER;
+            }
+        } else {
+            first_val = Some(val);
+        }
+    }
     
-    // --- PHASE 2: TOP-DOWN BFS SERIALIZATION ---
+    // If we survived the loop, all 8 children are identical leaves (or all air).
+    first_val.unwrap_or(AIR_MARKER)
+}
+
+fn serialize_svo_bfs(pyramid: &[Vec<u32>; 6], volumes: &[i32; 6]) -> Vec<u32> {
     let mut out_data: Vec<u32> = Vec::with_capacity(1024);
-    out_data.push(0); 
-    
-    // Queue stores: (level, V3i_position, parent_index_in_out_data)
-    let mut queue = std::collections::VecDeque::new();
+    out_data.push(0);  
+
+    let mut queue = VecDeque::new();
     queue.push_back((0, V3i { x: 0, y: 0, z: 0 }, 0));
     
     while let Some((level, pos, my_idx)) = queue.pop_front() {
-        let mut child_mask: u32 = 0;
-        let mut leaf_mask: u32 = 0;
+        let child_level = level + 1;
+        let child_volume = volumes[child_level];
         
-        // Tuple: (is_leaf, voxel_payload, child_V3i_position)
-        let mut valid_children = Vec::with_capacity(8);
-        
-        let child_vol = volumes[level + 1];
-        
-        for i in 0..8 {
-            let child_pos = V3i {
-                x: (pos.x * 2) + (i & 1),
-                y: (pos.y * 2) + ((i >> 1) & 1),
-                z: (pos.z * 2) + ((i >> 2) & 1),
-            };
-            
-            let child_idx = child_pos.x + (child_pos.y * child_vol) + (child_pos.z * child_vol * child_vol);
-            let val = pyramid[level + 1][child_idx as usize];
-            
-            if val != 0 { 
-                child_mask |= 1 << i;
-                
-                if val != u32::MAX { 
-                    leaf_mask |= 1 << i;
-                    valid_children.push((true, val, child_pos));
-                } else { 
-                    valid_children.push((false, val, child_pos));
-                }
-            }
-        }
+        let (child_mask, leaf_mask, valid_children) = scan_children_for_serialization(
+            pyramid, child_level, child_volume, &pos
+        );
         
         let pointer = out_data.len() as u32;
-        
         let node_data = (child_mask << 24) | (leaf_mask << 16) | pointer;
         out_data[my_idx] = node_data;
         
-        // Unpacking the clean tuple
-        for (is_leaf, val, child_pos) in valid_children {
+        for child in valid_children {
             let child_out_idx = out_data.len();
             
-            if is_leaf {
-                out_data.push(val); 
+            if child.is_leaf {
+                out_data.push(child.payload); 
             } else {
-                out_data.push(0); 
-                queue.push_back((level + 1, child_pos, child_out_idx));
+                out_data.push(0);  
+                queue.push_back((child_level, child.pos, child_out_idx));
             }
         }
     }
@@ -215,3 +214,33 @@ pub fn build_chunk(flat_data: &[u32]) -> Vec<u32> {
     out_data
 }
 
+/// Inspects the 8 children, generates the SVO bitmasks, and collects the valid nodes.
+fn scan_children_for_serialization(pyramid: &[Vec<u32>; 6], child_level: usize, child_volume: i32, parent_pos: &V3i) -> (u32, u32, Vec<SvoChild>) {
+    let mut child_mask: u32 = 0;
+    let mut leaf_mask: u32 = 0;
+    let mut valid_children = Vec::with_capacity(8);
+    
+    for i in 0..8 {
+        let child_pos = V3i {
+            x: (parent_pos.x * 2) + (i & 1),
+            y: (parent_pos.y * 2) + ((i >> 1) & 1),
+            z: (parent_pos.z * 2) + ((i >> 2) & 1),
+        };
+        
+        let child_idx = child_pos.x + (child_pos.y * child_volume) + (child_pos.z * child_volume * child_volume);
+        let val = pyramid[child_level][child_idx as usize];
+        
+        if val != AIR_MARKER { 
+            child_mask |= 1 << i;
+            
+            if val != BRANCH_MARKER { 
+                leaf_mask |= 1 << i;
+                valid_children.push(SvoChild { is_leaf: true, payload: val, pos: child_pos });
+            } else { 
+                valid_children.push(SvoChild { is_leaf: false, payload: val, pos: child_pos });
+            }
+        }
+    }
+    
+    (child_mask, leaf_mask, valid_children)
+}
