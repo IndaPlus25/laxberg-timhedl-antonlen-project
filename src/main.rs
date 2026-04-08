@@ -108,6 +108,7 @@ impl ApplicationHandler for App {
                     raycaster(&mut buffer, width, height, fov, &self.player, &self.chunks);
 
                     self.player.direction.0 += 0.01;
+                    self.player.position.x += 0.01;
                     
                     buffer.present().unwrap();
 

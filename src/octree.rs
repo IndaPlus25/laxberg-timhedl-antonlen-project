@@ -155,35 +155,29 @@ pub fn find_intersection(ray: &Ray, chunk: &Chunk, current: u32) -> Option<Inter
 
 }
 
-fn proc_subtree(ray: &Ray, chunk: &Chunk, current: u32, entry: V3, exit: V3, direction_mask: u32) -> Option<IntersectionData>{
+fn proc_subtree(ray: &Ray, chunk: &Chunk, current: u32, entry: V3, exit: V3, direction_mask: u32) -> Option<IntersectionData> {
     
     let mid = vec_mult_scal(&vec_add(&entry, &exit), 0.5);
+    
+    let t_min = entry.x.max(entry.y).max(entry.z);
 
-    let entry_plane = vec_entry_plane(&entry);
-
-    //000 is child 0 111 is child 7
     let mut first_child_intersect: u32 = 0; 
 
-    if entry_plane == 0 {
-        if mid.y < entry.x {
-            first_child_intersect |= 2;
-        }
-        if mid.z < entry.x {
-            first_child_intersect |= 4;
-        }
-    } else if entry_plane == 1 {
-        if mid.x < entry.y {
-            first_child_intersect |= 1;
-        }
-        if mid.z < entry.y {
-            first_child_intersect |= 4;
-        }
+    if t_min < 0.0 {
+        if mid.x < 0.0 { first_child_intersect |= 1; }
+        if mid.y < 0.0 { first_child_intersect |= 2; }
+        if mid.z < 0.0 { first_child_intersect |= 4; }
     } else {
-        if mid.x < entry.z {
-            first_child_intersect |= 1;
-        }
-        if mid.y < entry.z {
-            first_child_intersect |= 2;
+        let entry_plane = vec_entry_plane(&entry);
+        if entry_plane == 0 {
+            if mid.y < entry.x { first_child_intersect |= 2; }
+            if mid.z < entry.x { first_child_intersect |= 4; }
+        } else if entry_plane == 1 {
+            if mid.x < entry.y { first_child_intersect |= 1; }
+            if mid.z < entry.y { first_child_intersect |= 4; }
+        } else {
+            if mid.x < entry.z { first_child_intersect |= 1; }
+            if mid.y < entry.z { first_child_intersect |= 2; }
         }
     }
 
