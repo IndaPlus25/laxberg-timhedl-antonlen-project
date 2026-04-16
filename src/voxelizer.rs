@@ -161,7 +161,79 @@ fn line_intersect_point_with_plane(point1: [f32; 3], point2: [f32; 3], axis: usi
 }
 
 fn cube_corner_pierce_triangle(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width: f32) -> bool {
-    todo!();
+    let directions = [
+        // Positive x diagonals
+        [cube_width, cube_width, cube_width],
+        [cube_width, cube_width, -cube_width],
+        [cube_width, -cube_width, cube_width],
+        [cube_width, -cube_width, -cube_width],
+
+        // Negative x diagonals
+        [-cube_width, cube_width, cube_width],
+        [-cube_width, cube_width, -cube_width],
+        [-cube_width, -cube_width, cube_width],
+        [-cube_width, -cube_width, -cube_width],
+    ];
+    
+    let edge1 = [
+        vertecies[1][0] - vertecies[0][0],
+        vertecies[1][1] - vertecies[0][1],
+        vertecies[1][2] - vertecies[0][2]
+    ];
+
+    let edge2 = [
+        vertecies[2][0] - vertecies[0][0],
+        vertecies[2][1] - vertecies[0][1],
+        vertecies[2][2] - vertecies[0][2]
+    ];
+
+    let mut intersections = [true; 8];
+
+    for i in 0..8 {
+        let direction = directions[i];
+
+        let h = [
+            direction[1] * edge2[2] - direction[2] * edge2[1],
+            -(direction[0] * edge2[2] - direction[2] * edge2[0]),
+            direction[0] * edge2[1] - direction[1] * edge2[0],
+        ];
+
+        let a = edge1[0] * h[0] + edge1[1] * h[1] + edge1[2] * h[2];
+        if a > -1e-7 && a < 1e-7 {
+            intersections[i] = false;
+            continue;
+        };
+
+        let f = 1.0 / a;
+        let s = [
+            cube_center[0] - vertecies[0][0],
+            cube_center[1] - vertecies[0][1],
+            cube_center[2] - vertecies[0][2],
+        ];
+        let u = f * (s[0] * h[0] + s[1] * h[1] + s[2] * h[2]);
+        if u < 0.0 || u > 1.0 {
+            intersections[i] = false;
+            continue;
+        };
+
+        let q = [
+            s[1] * edge1[2] - s[2] * edge1[1],
+            -(s[0] * edge1[2] - s[2] * edge1[0]),
+            s[0] * edge1[1] - s[1] * edge1[0],
+        ];
+        let v = f * (direction[0] * q[0] + direction[1] * q[1] + direction[2] * q[2]);
+        if v < 0.0 || u + v > 1.0 {
+            intersections[i] = false;
+            continue;
+        }
+
+        let t = f * (edge2[0] * q[0] + edge2[1] * q[1] + edge2[2] * q[2]);
+        if t < 0.0 || t > 1.0 {
+            intersections[i] = false;
+        }
+    };
+
+    intersections.iter().any(|x| *x )
 }
 
 #[cfg(test)]
