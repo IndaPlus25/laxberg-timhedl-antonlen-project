@@ -160,6 +160,10 @@ fn line_intersect_point_with_plane(point1: [f32; 3], point2: [f32; 3], axis: usi
     return Some(vertex)
 }
 
+fn cube_corner_pierce_triangle(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width: f32) -> bool {
+    todo!();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
