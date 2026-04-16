@@ -416,4 +416,56 @@ mod tests {
         
         assert_eq!(triangle_edge_pierces_cube_face(vertecies, center, width), false)
     } 
+
+    #[test]
+    fn cube_at_center_corner_pierces_triangle_return_true() {
+        let vertecies = [
+            [3.0, 0.0, 0.0], 
+            [0.0, 3.0, 0.0], 
+            [0.0, 0.0, 1.75], 
+        ];
+        let center = [0.0, 0.0, 0.0];
+        let width = 1.0;
+        
+        assert!(cube_corner_pierce_triangle(vertecies, center, width));
+    }
+
+    #[test]
+    fn cube_not_at_center_corner_pierces_triangle_return_true() {
+        let vertecies = [
+            [8.0, -4.0, 5.0], 
+            [3.0, 1.0, 5.0], 
+            [3.0, -4.0, 9.0], 
+        ];
+        let center = [3.0, -4.0, 5.0];
+        let width = 2.0;
+        
+        assert!(cube_corner_pierce_triangle(vertecies, center, width));
+    }
+
+    #[test]
+    fn cube_corner_not_pierces_triangle_return_false() {
+        let vertecies = [
+            [8.0, -4.0, 5.0], 
+            [3.0, 1.0, 5.0], 
+            [3.0, -1.0, 9.0], 
+        ];
+        let center = [3.0, -4.0, 5.0];
+        let width = 2.0;
+        
+        assert_eq!(cube_corner_pierce_triangle(vertecies, center, width), false);
+    }
+
+    #[test]
+    fn triangle_through_cube_diagonal_returns_true() {
+        let vertecies = [
+            [8.0, -9.0, 0.0], 
+            [-1.0, 1.0, 0.0], 
+            [3.0, -4.0, 14.0], 
+        ];
+        let center = [3.0, -4.0, 5.0];
+        let width = 2.0;
+        
+        assert!(cube_corner_pierce_triangle(vertecies, center, width));
+    }
 }
