@@ -1,3 +1,5 @@
+mod file_parser;
+
 mod octree;
 mod vecmath;
 mod renderer;
