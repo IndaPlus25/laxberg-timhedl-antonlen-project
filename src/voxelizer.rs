@@ -236,6 +236,35 @@ fn cube_corner_pierce_triangle(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], 
     intersections.iter().any(|x| *x )
 }
 
+fn triangle_cube_intersection(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width: f32) -> bool {
+    if verticies_in_cube(vertecies, cube_center, cube_width) {
+        return true;
+    }
+
+    if vertecies_outside_same_face(vertecies, cube_center, cube_width) {
+        return false;
+    }
+
+    if vertecies_outside_same_edge(vertecies, cube_center, cube_width) {
+        return false;
+    }
+
+    if vertecies_outside_same_corner(vertecies, cube_center, cube_width) {
+        return false;
+    }
+
+    if triangle_edge_pierces_cube_face(vertecies, cube_center, cube_width) {
+        return true;
+    }
+
+    if cube_corner_pierce_triangle(vertecies, cube_center, cube_width) {
+        return true;
+    }
+
+    // Default return value, should be unreachable
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
