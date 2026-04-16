@@ -265,6 +265,64 @@ fn triangle_cube_intersection(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], c
     false
 }
 
+pub fn voxel_grid_from_triangles(triangles: Vec<[[f32; 3]; 3]>, min_width: usize) -> Vec<Vec<Vec<bool>>> {
+    let mut min = [f32::MAX; 3];
+    let mut max = [f32::MIN; 3];
+
+    // Set min and max values for each axis
+    for triangle in triangles.iter() {
+        for vertex in triangle {
+            let x = vertex[0];
+            let y = vertex[1];
+            let z = vertex[2];
+
+            if x < min[0] { min[0] = x; }
+            if x > max[0] { max[0] = x; }
+
+            if y < min[1] { min[1] = y; }
+            if y > max[1] { max[1] = y; }
+
+            if z < min[2] { min[2] = z; }
+            if z > max[2] { max[2] = z; }
+        }
+    };
+
+    // Calculate the size and amount of cubes using the shortest axis and the 'min_width' argument 
+    let axis_width = [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
+    let min_width_axis = axis_width.iter().zip([0, 1, 2]).reduce(|x, y| if x.0 < y.0 { x } else { y }).unwrap().1;
+    let cube_width = axis_width[min_width_axis] / (min_width as f32);
+    let cubes_per_axis: [usize; 3] = [
+        (axis_width[0] / cube_width).ceil() as usize,
+        (axis_width[1] / cube_width).ceil() as usize,
+        (axis_width[2] / cube_width).ceil() as usize,
+    ];
+
+    let mut voxel_grid = vec![vec![vec![false; cubes_per_axis[0]]; cubes_per_axis[1]]; cubes_per_axis[2]];
+
+    // Iterate over x,y,z and calculate the cube's position in the "triangle world"
+    for z_step in 0..cubes_per_axis[2] {
+        let z = max[2] - (cube_width * (z_step as f32) + cube_width * 0.5);
+
+        for y_step in 0..cubes_per_axis[1] {
+            let y = min[1] - (cube_width * (y_step as f32) + cube_width * 0.5);
+
+            for x_step in 0..cubes_per_axis[0] {
+                let x = min[0] - (cube_width * (x_step as f32) + cube_width * 0.5);
+
+                // Iterate over the triangles and check if any intersect with the cube 
+                for triangle in triangles.iter() {
+                    if triangle_cube_intersection(*triangle, [x, y, z], cube_width) {
+                        voxel_grid[z_step][y_step][x_step] = true; 
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    return voxel_grid;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
