@@ -72,8 +72,8 @@ pub fn raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, player: 
                 1 => 0xFF0000, // Red
                 2 => 0x00FF00, // Green
                 3 => 0x0000FF, // Blue
-                4 => 0xFF9500,
-                5 => 0xFFD60A,
+                4 => 0xFF9500, // Orange
+                5 => 0xFFD60A, // Yellow
                 _ => 0xFFFFFF, // White
             };
         } else {
