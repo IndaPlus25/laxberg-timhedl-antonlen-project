@@ -1,3 +1,4 @@
+use rand::{self, RngExt};
 /// Checks if any of a triangles vertecies are within a given box
 fn verticies_in_cube(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width: f32) -> bool {
     for vertex in vertecies {
@@ -299,6 +300,8 @@ pub fn voxel_grid_from_triangles(triangles: Vec<[[f32; 3]; 3]>, min_width: usize
 
     let mut voxel_grid = vec![vec![vec![0; cubes_per_axis[0]]; cubes_per_axis[1]]; cubes_per_axis[2]];
 
+    let mut rng = rand::rng();
+
     // Iterate over x,y,z and calculate the cube's position in the "triangle world"
     for z_step in 0..cubes_per_axis[2] {
         let z = max[2] - (cube_width * (z_step as f32) + cube_width * 0.5);
@@ -311,8 +314,8 @@ pub fn voxel_grid_from_triangles(triangles: Vec<[[f32; 3]; 3]>, min_width: usize
 
                 // Iterate over the triangles and check if any intersect with the cube 
                 for triangle in triangles.iter() {
-                    if triangle_cube_intersection(*triangle, [x, y, z], cube_width) {
-                        voxel_grid[z_step][y_step][x_step] = 1; 
+                    if triangle_cube_intersection(*triangle, [x, y, z], cube_width * 0.5) {
+                        voxel_grid[z_step][y_step][x_step] = rng.random_range(1..=6); 
                         break;
                     }
                 }
