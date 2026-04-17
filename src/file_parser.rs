@@ -143,20 +143,9 @@ impl FileFormat for ObjParser {
     fn parse_vertices(&self, coordinates: &str) -> Result<Vertex, Error> {
         let mut parts = coordinates.split_whitespace();
 
-        let x = match ObjParser::parse_vertex_obj_format(parts.next()) {
-            Ok(f) => {f}
-            Err(e) => {return Err(e);}
-        };
-
-        let y = match ObjParser::parse_vertex_obj_format(parts.next()) {
-            Ok(f) => {f}
-            Err(e) => {return Err(e);}
-        };
-
-        let z = match ObjParser::parse_vertex_obj_format(parts.next()) {
-            Ok(f) => {f}
-            Err(e) => {return Err(e);}
-        };
+        let x =  ObjParser::parse_vertex_obj_format(parts.next())?;
+        let y = ObjParser::parse_vertex_obj_format(parts.next())?;
+        let z = ObjParser::parse_vertex_obj_format(parts.next())?;
 
         Ok(Vertex { x, y, z })
     }
@@ -164,20 +153,9 @@ impl FileFormat for ObjParser {
     fn parse_faces(&self, vertices: &str)  -> Result<Vec<Face>, Error> {
         let mut parts = vertices.split_whitespace();
 
-        let a = match ObjParser::parse_face_obj_format(parts.next()) {
-            Ok(u) => {u}
-            Err(e) => {return Err(e);}
-        };
-
-        let b = match ObjParser::parse_face_obj_format(parts.next()) {
-            Ok(u) => {u}
-            Err(e) => {return Err(e);}
-        };
-
-        let c = match ObjParser::parse_face_obj_format(parts.next()) {
-            Ok(u) => {u}
-            Err(e) => {return Err(e);}
-        };
+        let a = ObjParser::parse_face_obj_format(parts.next())?;
+        let b = ObjParser::parse_face_obj_format(parts.next())?;
+        let c = ObjParser::parse_face_obj_format(parts.next())?;
 
         match ObjParser::parse_face_obj_format(parts.next()) {
             Ok(d) => {
