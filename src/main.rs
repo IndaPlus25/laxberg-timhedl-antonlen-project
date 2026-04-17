@@ -35,7 +35,7 @@ fn main() {
     event_loop.set_control_flow(ControlFlow::Poll);
 
     println!("Generating random world data...");
-    let world_data = worldgen::generate_random_world(256, 256, 256, 0.01, 4);
+    let world_data = worldgen::generate_random_world(256, 256, 256, 0.5, 4);
 
     println!("Compressing world into Sparse Voxel Octrees...");
     let chunks = to_chunks(&world_data);
@@ -43,7 +43,7 @@ fn main() {
 
     let player = Player {
         position: V3{
-            x: 128.1,
+            x: 256.1,
             y: 128.1,
             z: 128.1,
         },

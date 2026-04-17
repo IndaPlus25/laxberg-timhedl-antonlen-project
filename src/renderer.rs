@@ -60,8 +60,7 @@ pub fn raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, player: 
         let x_offset = vec_mult_scal(&delta_x, x);
         let y_offset = vec_mult_scal(&delta_y, y);
 
-        let big_ray_dir = vec_add(&top_left_vec, &vec_add(&x_offset, &y_offset));
-        let ray_dir = vec_normalize(&big_ray_dir);
+        let ray_dir = vec_add(&top_left_vec, &vec_add(&x_offset, &y_offset));
 
         let ray = Ray { origin: player_pos, direction: ray_dir };
 

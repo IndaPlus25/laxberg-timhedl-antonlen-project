@@ -123,7 +123,7 @@ pub fn find_intersection(ray: &Ray, chunk: &Chunk, current: u32) -> Option<Inter
     let mut pos_ray_origin: V3 = ray.origin;
 
     if pos_ray_dir.x < 0.0 {
-        direction_mask |= 1;
+        direction_mask |= 1; 
         pos_ray_dir.x = -pos_ray_dir.x;
         pos_ray_origin.x = chunk.max_pos.x - (ray.origin.x - chunk.min_pos.x);
     }
@@ -242,7 +242,7 @@ fn proc_subtree(ray: &Ray, chunk: &Chunk, current: u32, entry: V3, exit: V3, dir
 }
 
 pub fn get_ending(data: u32) -> u32 {
-    data & 0xFFFF
+    data & 0xFFFF 
 }
 
 fn is_leaf(data: u32, position: u32) -> bool {
