@@ -265,7 +265,7 @@ fn triangle_cube_intersection(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], c
     false
 }
 
-pub fn voxel_grid_from_triangles(triangles: Vec<[[f32; 3]; 3]>, min_width: usize) -> Vec<Vec<Vec<bool>>> {
+pub fn voxel_grid_from_triangles(triangles: Vec<[[f32; 3]; 3]>, min_width: usize) -> Vec<Vec<Vec<u32>>> {
     let mut min = [f32::MAX; 3];
     let mut max = [f32::MIN; 3];
 
@@ -297,7 +297,7 @@ pub fn voxel_grid_from_triangles(triangles: Vec<[[f32; 3]; 3]>, min_width: usize
         (axis_width[2] / cube_width).ceil() as usize,
     ];
 
-    let mut voxel_grid = vec![vec![vec![false; cubes_per_axis[0]]; cubes_per_axis[1]]; cubes_per_axis[2]];
+    let mut voxel_grid = vec![vec![vec![0; cubes_per_axis[0]]; cubes_per_axis[1]]; cubes_per_axis[2]];
 
     // Iterate over x,y,z and calculate the cube's position in the "triangle world"
     for z_step in 0..cubes_per_axis[2] {
@@ -312,7 +312,7 @@ pub fn voxel_grid_from_triangles(triangles: Vec<[[f32; 3]; 3]>, min_width: usize
                 // Iterate over the triangles and check if any intersect with the cube 
                 for triangle in triangles.iter() {
                     if triangle_cube_intersection(*triangle, [x, y, z], cube_width) {
-                        voxel_grid[z_step][y_step][x_step] = true; 
+                        voxel_grid[z_step][y_step][x_step] = 1; 
                         break;
                     }
                 }
