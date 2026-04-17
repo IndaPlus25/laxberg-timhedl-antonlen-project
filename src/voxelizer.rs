@@ -5,9 +5,9 @@ fn verticies_in_cube(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width
         let dy = vertex[1] - cube_center[1];
         let dz = vertex[2] - cube_center[2];
 
-        if dx > cube_width || -dx > cube_width{ continue; }
-        if dy > cube_width || -dy > cube_width{ continue; }
-        if dz > cube_width || -dz > cube_width{ continue; }
+        if dx.abs() > cube_width { continue; }
+        if dy.abs() > cube_width { continue; }
+        if dz.abs() > cube_width { continue; }
 
         return true;
     };
