@@ -311,7 +311,7 @@ pub fn voxel_grid_from_triangles(triangles: Vec<[[f32; 3]; 3]>, min_width: usize
 
                 // Iterate over the triangles and check if any intersect with the cube 
                 for triangle in triangles.iter() {
-                    if triangle_cube_intersection(*triangle, [x, y, z], cube_width) {
+                    if triangle_cube_intersection(*triangle, [x, y, z], cube_width * 0.5) {
                         voxel_grid[z_step][y_step][x_step] = 1; 
                         break;
                     }
