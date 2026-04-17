@@ -304,10 +304,10 @@ pub fn voxel_grid_from_triangles(triangles: Vec<[[f32; 3]; 3]>, min_width: usize
         let z = max[2] - (cube_width * (z_step as f32) + cube_width * 0.5);
 
         for y_step in 0..cubes_per_axis[1] {
-            let y = min[1] - (cube_width * (y_step as f32) + cube_width * 0.5);
+            let y = min[1] + (cube_width * (y_step as f32) + cube_width * 0.5);
 
             for x_step in 0..cubes_per_axis[0] {
-                let x = min[0] - (cube_width * (x_step as f32) + cube_width * 0.5);
+                let x = min[0] + (cube_width * (x_step as f32) + cube_width * 0.5);
 
                 // Iterate over the triangles and check if any intersect with the cube 
                 for triangle in triangles.iter() {
