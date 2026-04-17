@@ -2,21 +2,21 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, Error, ErrorKind};
 use std::path::{Path};
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Vertex{
     pub x: f32,
     pub y: f32,
     pub z: f32,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Face {
     pub v1: usize,
     pub v2: usize,
     pub v3: usize,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Mesh {
     pub name: String,
     pub vertices: Vec<Vertex>,
