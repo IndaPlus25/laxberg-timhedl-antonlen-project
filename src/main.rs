@@ -37,8 +37,35 @@ fn main() {
 
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    println!("Generating random world data...");
-    let world_data = worldgen::generate_random_world(256, 256, 256, 0.5, 4);
+    // println!("Generating random world data...");
+    // let world_data = worldgen::generate_random_world(256, 256, 256, 0.5, 4);
+
+    let mesh = file_parser::file_parse_interface("Cylinder.obj").unwrap()[0].clone();
+    let mut triangles: Vec<[[f32; 3]; 3]> = Vec::new();
+    for face in mesh.faces {
+        let triangle = [
+            [
+                mesh.vertices[face.v1].x,
+                mesh.vertices[face.v1].y,
+                mesh.vertices[face.v1].z,
+
+            ],
+            [
+                mesh.vertices[face.v2].x,
+                mesh.vertices[face.v2].y,
+                mesh.vertices[face.v2].z,
+
+            ],
+            [
+                mesh.vertices[face.v3].x,
+                mesh.vertices[face.v3].y,
+                mesh.vertices[face.v3].z,
+
+            ],
+        ];
+        triangles.push(triangle);
+    }
+    let world_data = voxelizer::voxel_grid_from_triangles(triangles, 15);
 
     println!("Compressing world into Sparse Voxel Octrees...");
     let chunks = to_chunks(&world_data);
@@ -46,11 +73,11 @@ fn main() {
 
     let player = Player {
         position: V3{
-            x: 256.1,
-            y: 128.1,
-            z: 128.1,
+            x: 7.5,
+            y: 40.,
+            z: 7.5,
         },
-        direction: (0.0, -0.5)               
+        direction: (0.0, -std::f32::consts::FRAC_PI_2)               
     };
 
     let mut app = App {
