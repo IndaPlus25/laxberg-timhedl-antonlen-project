@@ -19,7 +19,10 @@ fn verticies_in_cube(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width
 }
 
 fn vertecies_outside_same_face(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width: f32) -> bool {
+    // Iterate over the 3 axis x,y,z
     for axis in 0..3 {
+        
+        // Calculate distance from center along 'axis' for all 3 vertecies
         let dv1 = vertecies[0][axis] - cube_center[axis];
         let dv2 = vertecies[1][axis] - cube_center[axis];
         let dv3 = vertecies[2][axis] - cube_center[axis];
