@@ -40,7 +40,7 @@ fn main() {
     // println!("Generating random world data...");
     // let world_data = worldgen::generate_random_world(256, 256, 256, 0.5, 4);
 
-    let mesh = file_parser::file_parse_interface("Susan.obj").unwrap()[0].clone();
+    let mesh = file_parser::file_parse_interface("Susan.obj").unwrap().clone();
     let world_data = voxelizer::voxel_grid_from_triangles(mesh, 50);
 
     println!("Compressing world into Sparse Voxel Octrees...");
