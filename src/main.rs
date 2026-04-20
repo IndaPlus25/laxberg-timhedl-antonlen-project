@@ -41,31 +41,7 @@ fn main() {
     // let world_data = worldgen::generate_random_world(256, 256, 256, 0.5, 4);
 
     let mesh = file_parser::file_parse_interface("Susan.obj").unwrap()[0].clone();
-    let mut triangles: Vec<[[f32; 3]; 3]> = Vec::new();
-    for face in mesh.faces {
-        let triangle = [
-            [
-                mesh.vertices[face.v1].x,
-                mesh.vertices[face.v1].y,
-                mesh.vertices[face.v1].z,
-
-            ],
-            [
-                mesh.vertices[face.v2].x,
-                mesh.vertices[face.v2].y,
-                mesh.vertices[face.v2].z,
-
-            ],
-            [
-                mesh.vertices[face.v3].x,
-                mesh.vertices[face.v3].y,
-                mesh.vertices[face.v3].z,
-
-            ],
-        ];
-        triangles.push(triangle);
-    }
-    let world_data = voxelizer::voxel_grid_from_triangles(triangles, 50);
+    let world_data = voxelizer::voxel_grid_from_triangles(mesh, 50);
 
     println!("Compressing world into Sparse Voxel Octrees...");
     let chunks = to_chunks(&world_data);
