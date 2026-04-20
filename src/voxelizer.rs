@@ -1,5 +1,5 @@
 use rand::{self, RngExt};
-use super::file_parser::Mesh;
+use super::file_parser::{Mesh, Face};
 
 /// Checks if any of a triangles vertecies are within a given box
 fn verticies_in_cube(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width: f32) -> bool {
@@ -268,32 +268,33 @@ fn triangle_cube_intersection(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], c
     false
 }
 
+fn vertecies_from_mesh_face(mesh: &Mesh, face: &Face) -> [[f32; 3]; 3] {
+    [
+        [
+            mesh.vertices[face.v1].x,
+            mesh.vertices[face.v1].y,
+            mesh.vertices[face.v1].z,
+        ],
+        [
+            mesh.vertices[face.v2].x,
+            mesh.vertices[face.v2].y,
+            mesh.vertices[face.v2].z,
+        ],
+        [
+            mesh.vertices[face.v3].x,
+            mesh.vertices[face.v3].y,
+            mesh.vertices[face.v3].z,
+        ],
+    ]
+}
+
 pub fn voxel_grid_from_triangles(mesh: Mesh, min_width: usize) -> Vec<Vec<Vec<u32>>> {
     let mut min = [f32::MAX; 3];
     let mut max = [f32::MIN; 3];
 
     // Set min and max values for each axis
     for triangle in &mesh.faces {
-        let vertecies = [
-            [
-                mesh.vertices[triangle.v1].x,
-                mesh.vertices[triangle.v1].y,
-                mesh.vertices[triangle.v1].z,
-
-            ],
-            [
-                mesh.vertices[triangle.v2].x,
-                mesh.vertices[triangle.v2].y,
-                mesh.vertices[triangle.v2].z,
-
-            ],
-            [
-                mesh.vertices[triangle.v3].x,
-                mesh.vertices[triangle.v3].y,
-                mesh.vertices[triangle.v3].z,
-
-            ],
-        ];
+        let vertecies = vertecies_from_mesh_face(&mesh, triangle);
         for vertex in vertecies {
             let x = vertex[0];
             let y = vertex[1];
@@ -336,26 +337,7 @@ pub fn voxel_grid_from_triangles(mesh: Mesh, min_width: usize) -> Vec<Vec<Vec<u3
 
                 // Iterate over the triangles and check if any intersect with the cube 
                 for triangle in &mesh.faces {
-                    let vertecies = [
-                        [
-                            mesh.vertices[triangle.v1].x,
-                            mesh.vertices[triangle.v1].y,
-                            mesh.vertices[triangle.v1].z,
-
-                        ],
-                        [
-                            mesh.vertices[triangle.v2].x,
-                            mesh.vertices[triangle.v2].y,
-                            mesh.vertices[triangle.v2].z,
-
-                        ],
-                        [
-                            mesh.vertices[triangle.v3].x,
-                            mesh.vertices[triangle.v3].y,
-                            mesh.vertices[triangle.v3].z,
-
-                        ],
-                    ];
+                    let vertecies = vertecies_from_mesh_face(&mesh, triangle);
 
                     if triangle_cube_intersection(vertecies, [x, y, z], cube_width * 0.5) {
                         voxel_grid[z_step][y_step][x_step] = rng.random_range(1..=6); 
