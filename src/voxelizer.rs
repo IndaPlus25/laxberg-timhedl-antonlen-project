@@ -1,4 +1,6 @@
 use rand::{self, RngExt};
+use super::file_parser::Mesh;
+
 /// Checks if any of a triangles vertecies are within a given box
 fn verticies_in_cube(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width: f32) -> bool {
     for vertex in vertecies {
@@ -266,13 +268,33 @@ fn triangle_cube_intersection(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], c
     false
 }
 
-pub fn voxel_grid_from_triangles(triangles: Vec<[[f32; 3]; 3]>, min_width: usize) -> Vec<Vec<Vec<u32>>> {
+pub fn voxel_grid_from_triangles(mesh: Mesh, min_width: usize) -> Vec<Vec<Vec<u32>>> {
     let mut min = [f32::MAX; 3];
     let mut max = [f32::MIN; 3];
 
     // Set min and max values for each axis
-    for triangle in triangles.iter() {
-        for vertex in triangle {
+    for triangle in &mesh.faces {
+        let vertecies = [
+            [
+                mesh.vertices[triangle.v1].x,
+                mesh.vertices[triangle.v1].y,
+                mesh.vertices[triangle.v1].z,
+
+            ],
+            [
+                mesh.vertices[triangle.v2].x,
+                mesh.vertices[triangle.v2].y,
+                mesh.vertices[triangle.v2].z,
+
+            ],
+            [
+                mesh.vertices[triangle.v3].x,
+                mesh.vertices[triangle.v3].y,
+                mesh.vertices[triangle.v3].z,
+
+            ],
+        ];
+        for vertex in vertecies {
             let x = vertex[0];
             let y = vertex[1];
             let z = vertex[2];
@@ -313,8 +335,29 @@ pub fn voxel_grid_from_triangles(triangles: Vec<[[f32; 3]; 3]>, min_width: usize
                 let x = min[0] + (cube_width * (x_step as f32) + cube_width * 0.5);
 
                 // Iterate over the triangles and check if any intersect with the cube 
-                for triangle in triangles.iter() {
-                    if triangle_cube_intersection(*triangle, [x, y, z], cube_width * 0.5) {
+                for triangle in &mesh.faces {
+                    let vertecies = [
+                        [
+                            mesh.vertices[triangle.v1].x,
+                            mesh.vertices[triangle.v1].y,
+                            mesh.vertices[triangle.v1].z,
+
+                        ],
+                        [
+                            mesh.vertices[triangle.v2].x,
+                            mesh.vertices[triangle.v2].y,
+                            mesh.vertices[triangle.v2].z,
+
+                        ],
+                        [
+                            mesh.vertices[triangle.v3].x,
+                            mesh.vertices[triangle.v3].y,
+                            mesh.vertices[triangle.v3].z,
+
+                        ],
+                    ];
+
+                    if triangle_cube_intersection(vertecies, [x, y, z], cube_width * 0.5) {
                         voxel_grid[z_step][y_step][x_step] = rng.random_range(1..=6); 
                         break;
                     }
