@@ -18,13 +18,12 @@ pub struct Face {
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Mesh {
-    pub name: String,
     pub vertices: Vec<Vertex>,
     pub faces: Vec<Face>,
 }
 
 trait FileFormat{
-    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Result<Vec<Mesh>, Error>;
+    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Result<Mesh, Error>;
 
     fn parse_line(&mut self, line_result: Result<String, Error>) -> io::Result<()>; 
 
@@ -36,8 +35,6 @@ trait FileFormat{
 struct ObjParser{
     vertices: Vec<Vertex>,
     faces: Vec<Face>,
-    objects: Vec<Mesh>,
-    previous_name: String,
 }
 
 impl ObjParser {
@@ -45,8 +42,6 @@ impl ObjParser {
         Self {
             vertices: vec![],
             faces: vec![],
-            objects: vec![],
-            previous_name: String::from(""),
         }
     }
 
@@ -84,7 +79,7 @@ impl ObjParser {
 }
 
 impl FileFormat for ObjParser { 
-    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Result<Vec<Mesh>, Error> {
+    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Result<Mesh, Error> {
         for (i, line_result) in reader.lines().enumerate(){
             match self.parse_line(line_result) {
                 Ok(_) => {},
@@ -92,13 +87,12 @@ impl FileFormat for ObjParser {
             }
         }  
 
-        self.objects.push(Mesh {
-            name: self.previous_name.clone(), 
-            vertices: std::mem::take(&mut self.vertices), 
+        let mesh = Mesh {
+            vertices: std::mem::take(&mut self.vertices),
             faces: std::mem::take(&mut self.faces),
-        });
+        };
 
-        Ok(std::mem::take(&mut self.objects))
+        Ok(mesh)
     }
 
     fn parse_line(&mut self, line_result: Result<String, Error>) -> Result<(), Error> {
@@ -122,18 +116,6 @@ impl FileFormat for ObjParser {
                     Err(e) => {return Err(e);}
                 }
             },
-            x if x.starts_with("o ") && self.previous_name != "".to_string() => {
-                self.objects.push(Mesh {
-                    name: self.previous_name.clone(), 
-                    vertices: std::mem::take(&mut self.vertices), 
-                    faces: std::mem::take(&mut self.faces),
-                });
-
-                self.previous_name = x[2..].to_string();
-            },
-            x if x.starts_with("o ") && self.previous_name == "".to_string() => {
-                self.previous_name = x[2..].to_string();
-            }
             _ => {},
         }
 
@@ -187,7 +169,7 @@ fn get_file_format(path: &Path) -> Option<Box<dyn FileFormat>>{
     }
 }
 
-fn parse_file(filename: &str) -> Result<Vec<Mesh>, Error> {
+fn parse_file(filename: &str) -> Result<Mesh, Error> {
     let path = Path::new(filename);
 
     let Ok(file) = File::open(&path) else {
@@ -206,12 +188,12 @@ fn parse_file(filename: &str) -> Result<Vec<Mesh>, Error> {
         },
     };
 
-    let objects = match formatter.handle_input(&mut reader){
+    let object = match formatter.handle_input(&mut reader){
         Ok(object) => {object},
         Err(e) => {return Err(e);}
     };
 
-    Ok(objects)
+    Ok(object)
 
 }
 
@@ -220,8 +202,9 @@ fn parse_file(filename: &str) -> Result<Vec<Mesh>, Error> {
 /// Input: Takes a &str that is the filename that is going to be parsed, need to contain the fileformat. 
 /// 
 /// Output: Gives a result, either Error to handle or a Vec of Meshes. One Mesh is one object in the obj file. A Mesh contains a list of faces and vertecies that descirbe the object.
-pub fn file_parse_interface(filename: &str) -> Result<Vec<Mesh>, Error> {
-    parse_file(filename)
+pub fn file_parse_interface(filename: &str) -> Result<Mesh, Error> {
+    let mesh = parse_file(filename);
+    mesh
 }
 
 #[cfg(test)]
