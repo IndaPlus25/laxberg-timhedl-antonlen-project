@@ -203,8 +203,7 @@ fn parse_file(filename: &str) -> Result<Mesh, Error> {
 /// 
 /// Output: Gives a result, either Error to handle or a Vec of Meshes. One Mesh is one object in the obj file. A Mesh contains a list of faces and vertecies that descirbe the object.
 pub fn file_parse_interface(filename: &str) -> Result<Mesh, Error> {
-    let mesh = parse_file(filename);
-    mesh
+    parse_file(filename)
 }
 
 #[cfg(test)]
