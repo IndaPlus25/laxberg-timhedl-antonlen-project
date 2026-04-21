@@ -1,6 +1,8 @@
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Error, ErrorKind};
+use std::io::{BufRead, BufReader, Error, ErrorKind};
 use std::path::{Path};
+
+use crate::error::{FileParseError};
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Vertex{
@@ -23,13 +25,13 @@ pub struct Mesh {
 }
 
 trait FileFormat{
-    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Result<Mesh, Error>;
+    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Result<Mesh, FileParseError>;
 
-    fn parse_line(&mut self, line_result: Result<String, Error>) -> io::Result<()>; 
+    fn parse_line(&mut self, line_result: Result<String, Error>) -> Result<(), FileParseError>; 
 
-    fn parse_vertices(&self, coordinates: &str) -> Result<Vertex, Error>;
+    fn parse_vertices(&self, coordinates: &str) -> Result<Vertex, FileParseError>;
 
-    fn parse_faces(&self, vertices: &str)  -> Result<Vec<Face>, Error> ;
+    fn parse_faces(&self, vertices: &str)  -> Result<Vec<Face>, FileParseError> ;
 } 
 
 struct ObjParser{
@@ -45,33 +47,33 @@ impl ObjParser {
         }
     }
 
-    fn parse_face_obj_format(part: Option<&str>) -> Result<usize, Error> {
+    fn parse_face_obj_format(part: Option<&str>) -> Result<usize, FileParseError> {
         let Some(point_data) = part else {
-            return Err(Error::new(ErrorKind::InvalidData, "Missing data"));
+            return Err(FileParseError::MissingData);
         };
 
         let Some(point_str) = point_data.split('/').next() else {
-            return Err(Error::new(ErrorKind::InvalidData, "Missing point"));
+            return Err(FileParseError::MissingPoint);
         };
 
         let Ok(parsed_point) = point_str.parse::<usize>() else {
-            return Err(Error::new(ErrorKind::InvalidData, format!("Parsing point failed, '{}' not valid input", point_str)))
+            return Err(FileParseError::InvalidDataType(point_str.to_string()));
         };
 
         let Some(point) = parsed_point.checked_sub(1) else {
-            return Err(Error::new(ErrorKind::InvalidData, format!("Invalid index, point index is negative")))
+            return Err(FileParseError::DataOutOfBounds(parsed_point));
         };
 
         Ok(point)
     }
 
-    fn parse_vertex_obj_format(part: Option<&str>) -> Result<f32, Error> { 
+    fn parse_vertex_obj_format(part: Option<&str>) -> Result<f32, FileParseError> { 
         let Some(coordinate_str) = part else {
-            return Err(Error::new(ErrorKind::InvalidData, "Missing coordinate"));
+            return Err(FileParseError::MissingCoordinate);
         };
 
         let Ok(coordinate) = coordinate_str.parse::<f32>() else {
-            return Err(Error::new(ErrorKind::InvalidData, format!("Parsing coordinate failed, '{}' not valid input", coordinate_str)))
+            return Err(FileParseError::InvalidDataType(coordinate_str.to_string()));
         };
 
         Ok(coordinate)
@@ -79,11 +81,11 @@ impl ObjParser {
 }
 
 impl FileFormat for ObjParser { 
-    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Result<Mesh, Error> {
+    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Result<Mesh, FileParseError> {
         for (i, line_result) in reader.lines().enumerate(){
             match self.parse_line(line_result) {
                 Ok(_) => {},
-                Err(e) => {return Err(Error::new(e.kind(), format!("{}, failed on line {}", e, i + 1)));}
+                Err(error) => {return Err(FileParseError::FailedLineParse(i, Box::new(error)));}
             }
         }  
 
@@ -95,7 +97,7 @@ impl FileFormat for ObjParser {
         Ok(mesh)
     }
 
-    fn parse_line(&mut self, line_result: Result<String, Error>) -> Result<(), Error> {
+    fn parse_line(&mut self, line_result: Result<String, Error>) -> Result<(), FileParseError> {
         let line = line_result?;
         let trimmed_line = line.trim();
 
@@ -122,7 +124,7 @@ impl FileFormat for ObjParser {
         Ok(())
     }
 
-    fn parse_vertices(&self, coordinates: &str) -> Result<Vertex, Error> {
+    fn parse_vertices(&self, coordinates: &str) -> Result<Vertex, FileParseError> {
         let mut parts = coordinates.split_whitespace();
 
         let x =  ObjParser::parse_vertex_obj_format(parts.next())?;
@@ -132,7 +134,7 @@ impl FileFormat for ObjParser {
         Ok(Vertex { x, y, z })
     }
 
-    fn parse_faces(&self, vertices: &str)  -> Result<Vec<Face>, Error> {
+    fn parse_faces(&self, vertices: &str)  -> Result<Vec<Face>, FileParseError> {
         let mut parts = vertices.split_whitespace();
 
         let a = ObjParser::parse_face_obj_format(parts.next())?;
@@ -156,37 +158,27 @@ impl FileFormat for ObjParser {
 
 }
 
-fn get_file_format(path: &Path) -> Option<Box<dyn FileFormat>>{
+fn get_file_format(path: &Path) -> Result<Box<dyn FileFormat>, FileParseError>{
     let extension = path.extension()
         .and_then(|ext| ext.to_str())
         .map(|ext|ext.to_lowercase());
     
     match extension.as_deref() {
         Some("obj") => {
-            Some(Box::new(ObjParser::new()))
+            Ok(Box::new(ObjParser::new()))
         },
-        _ => {None},
+        _ => {Err(FileParseError::NotSupportedFileFormat(extension))},
     }
 }
 
-fn parse_file(filename: &str) -> Result<Mesh, Error> {
+fn parse_file(filename: &str) -> Result<Mesh, FileParseError> {
     let path = Path::new(filename);
 
-    let Ok(file) = File::open(&path) else {
-        return Err(Error::new(ErrorKind::InvalidInput, "File does not exist"));
-    };
+    let file = File::open(&path)?;
 
     let mut reader = BufReader::new(file);
 
-    let mut formatter = match get_file_format(path) {
-        Some(f) => {f},
-        None => {      
-            return Err(Error::new(
-                ErrorKind::Other, 
-                "Placeholder: Unsupported file format!"
-            ));
-        },
-    };
+    let mut formatter =  get_file_format(path)?;
 
     let object = match formatter.handle_input(&mut reader){
         Ok(object) => {object},
@@ -202,7 +194,7 @@ fn parse_file(filename: &str) -> Result<Mesh, Error> {
 /// Input: Takes a &str that is the filename that is going to be parsed, need to contain the fileformat. 
 /// 
 /// Output: Gives a result, either Error to handle or a Vec of Meshes. One Mesh is one object in the obj file. A Mesh contains a list of faces and vertecies that descirbe the object.
-pub fn file_parse_interface(filename: &str) -> Result<Mesh, Error> {
+pub fn file_parse_interface(filename: &str) -> Result<Mesh, FileParseError> {
     parse_file(filename)
 }
 
@@ -408,76 +400,111 @@ mod tests {
     fn missing_coordinate_test() {
         let filename = "test-resources/file-parsing/bugatti-missing-coordinate-line-6.obj";
 
-        let result: Result<Mesh, Error> = file_parse_interface(filename);
+        let result: Result<Mesh, FileParseError> = file_parse_interface(filename);
         let actual_err = result.unwrap_err();
 
-        assert_eq!(actual_err.kind(), ErrorKind::InvalidData);
-        assert_eq!(actual_err.to_string(), "Missing coordinate, failed on line 6");
+        assert!(
+            matches!(
+                actual_err, 
+                FileParseError::FailedLineParse(5, inner_error) 
+                    if matches!(*inner_error, FileParseError::MissingCoordinate)
+            )
+        );
     }
 
     #[test]
     fn invalid_coordinate_test() {
         let filename = "test-resources/file-parsing/bugatti-invalid-coordinate-line-6.obj";
 
-        let result: Result<Mesh, Error> = file_parse_interface(filename);
+        let result: Result<Mesh, FileParseError> = file_parse_interface(filename);
         let actual_err = result.unwrap_err();
 
-        assert_eq!(actual_err.kind(), ErrorKind::InvalidData);
-        assert_eq!(actual_err.to_string(), "Parsing coordinate failed, 'apple' not valid input, failed on line 6");
+        assert!(
+            matches!(
+                actual_err, 
+                FileParseError::FailedLineParse(5, inner_error) 
+                    if matches!(*inner_error, FileParseError::InvalidDataType(ref s) if s == "apple")
+            )
+        );
     }
 
     #[test]
     fn missing_file_test() {
         let filename = "completed-project-with-no-errors.obj";
 
-        let result: Result<Mesh, Error> = file_parse_interface(filename);
+        let result: Result<Mesh, FileParseError> = file_parse_interface(filename);
         let actual_err = result.unwrap_err();
 
-        assert_eq!(actual_err.kind(), ErrorKind::InvalidInput);
-        assert_eq!(actual_err.to_string(), "File does not exist");
+        assert!(
+            matches!(
+                actual_err, 
+                FileParseError::IoError(err) if err.kind() == ErrorKind::NotFound
+            )
+        );
     }
 
     #[test]
     fn not_supported_fileformat_test() {
         let filename = "test-resources/file-parsing/invalid-fileformat.txt";
 
-        let result: Result<Mesh, Error> = file_parse_interface(filename);
+        let result: Result<Mesh, FileParseError> = file_parse_interface(filename);
         let actual_err = result.unwrap_err();
 
-        assert_eq!(actual_err.kind(), ErrorKind::Other);
-        assert_eq!(actual_err.to_string(), "Placeholder: Unsupported file format!");
+        assert!(
+            matches!(
+                actual_err, 
+                FileParseError::NotSupportedFileFormat(option) if option == Some("txt".to_string())
+            )
+        );
     }
 
     #[test]
     fn missing_data_test() {
         let filename = "test-resources/file-parsing/bugatti-missing-data-line-21.obj";
 
-        let result: Result<Mesh, Error> = file_parse_interface(filename);
+        let result: Result<Mesh, FileParseError> = file_parse_interface(filename);
         let actual_err = result.unwrap_err();
 
-        assert_eq!(actual_err.kind(), ErrorKind::InvalidData);
-        assert_eq!(actual_err.to_string(), "Missing data, failed on line 21");
+        assert!(
+            matches!(
+                actual_err, 
+                FileParseError::FailedLineParse(20, inner_error) 
+                    if matches!(*inner_error, FileParseError::MissingData)
+            )
+        );
     }
 
     #[test]
     fn invalid_vertex_test() {
         let filename = "test-resources/file-parsing/bugatti-invalid-vertex-line-21.obj";
 
-        let result: Result<Mesh, Error> = file_parse_interface(filename);
+        let result: Result<Mesh, FileParseError> = file_parse_interface(filename);
         let actual_err = result.unwrap_err();
 
-        assert_eq!(actual_err.kind(), ErrorKind::InvalidData);
-        assert_eq!(actual_err.to_string(), "Parsing point failed, 'apple' not valid input, failed on line 21");
+
+        assert!(
+            matches!(
+                actual_err, 
+                FileParseError::FailedLineParse(20, inner_error) 
+                    if matches!(*inner_error, FileParseError::InvalidDataType(ref s) if s == "apple")
+            )
+        );
     }
 
     #[test]
     fn missing_point_test() {
         let filename = "test-resources/file-parsing/bugatti-invalid-index-line-21.obj";
 
-        let result: Result<Mesh, Error> = file_parse_interface(filename);
+        let result: Result<Mesh, FileParseError> = file_parse_interface(filename);
         let actual_err = result.unwrap_err();
 
-        assert_eq!(actual_err.kind(), ErrorKind::InvalidData);
-        assert_eq!(actual_err.to_string(), "Invalid index, point index is negative, failed on line 21");
+        assert!(
+            matches!(
+                actual_err, 
+                FileParseError::FailedLineParse(20, inner_error) 
+                    if matches!(*inner_error, FileParseError::DataOutOfBounds(0))
+            )
+        );
     }
+
 }

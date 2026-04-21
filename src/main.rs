@@ -1,5 +1,6 @@
 mod file_parser;
 mod voxelizer;
+mod error;
 
 mod octree;
 mod vecmath;
