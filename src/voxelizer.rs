@@ -182,43 +182,46 @@ fn cube_corner_pierce_triangle(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], 
     for i in 0..8 {
         let direction = directions[i];
 
-        let h = [
+        let ray_edge2_cross = [
             direction[1] * edge2[2] - direction[2] * edge2[1],
             -(direction[0] * edge2[2] - direction[2] * edge2[0]),
             direction[0] * edge2[1] - direction[1] * edge2[0],
         ];
 
-        let a = edge1[0] * h[0] + edge1[1] * h[1] + edge1[2] * h[2];
-        if a > -1e-7 && a < 1e-7 {
+        let determinant = edge1[0] * ray_edge2_cross[0] + edge1[1] * ray_edge2_cross[1] + edge1[2] * ray_edge2_cross[2];
+
+        if determinant > -1e-7 && determinant < 1e-7 {
             intersections[i] = false;
             continue;
         };
 
-        let f = 1.0 / a;
-        let s = [
+        let inv_determinant = 1.0 / determinant;
+        let dist_to_center = [
             cube_center[0] - vertecies[0][0],
             cube_center[1] - vertecies[0][1],
             cube_center[2] - vertecies[0][2],
         ];
-        let u = f * (s[0] * h[0] + s[1] * h[1] + s[2] * h[2]);
+
+        let u = inv_determinant * (dist_to_center[0] * ray_edge2_cross[0] + dist_to_center[1] * ray_edge2_cross[1] + dist_to_center[2] * ray_edge2_cross[2]);
         if u < 0.0 || u > 1.0 {
             intersections[i] = false;
             continue;
         };
 
-        let q = [
-            s[1] * edge1[2] - s[2] * edge1[1],
-            -(s[0] * edge1[2] - s[2] * edge1[0]),
-            s[0] * edge1[1] - s[1] * edge1[0],
+        let origin_edge1_cross = [
+            dist_to_center[1] * edge1[2] - dist_to_center[2] * edge1[1],
+            -(dist_to_center[0] * edge1[2] - dist_to_center[2] * edge1[0]),
+            dist_to_center[0] * edge1[1] - dist_to_center[1] * edge1[0],
         ];
-        let v = f * (direction[0] * q[0] + direction[1] * q[1] + direction[2] * q[2]);
+
+        let v = inv_determinant * (direction[0] * origin_edge1_cross[0] + direction[1] * origin_edge1_cross[1] + direction[2] * origin_edge1_cross[2]);        
         if v < 0.0 || u + v > 1.0 {
             intersections[i] = false;
             continue;
         }
 
-        let t = f * (edge2[0] * q[0] + edge2[1] * q[1] + edge2[2] * q[2]);
-        if t < 0.0 || t > 1.0 {
+        let hit_distance = inv_determinant * (edge2[0] * origin_edge1_cross[0] + edge2[1] * origin_edge1_cross[1] + edge2[2] * origin_edge1_cross[2]);
+        if hit_distance < 0.0 || hit_distance > 1.0 {
             intersections[i] = false;
         }
     };
