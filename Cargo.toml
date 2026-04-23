@@ -4,3 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+softbuffer = "0.4.8"
+vecmath = "1.0.0"
+winit = "0.30.13"
+rayon = "1.11.0"
+rand = "0.10.0"
