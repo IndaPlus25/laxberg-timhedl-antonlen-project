@@ -187,7 +187,10 @@ impl ApplicationHandler for App {
         // Create window object
         let window = Arc::new(
             event_loop
-                .create_window(Window::default_attributes())
+                .create_window(
+                    Window::default_attributes()
+                    .with_visible(false)
+                    )
                 .unwrap(),
         );
 
@@ -196,7 +199,8 @@ impl ApplicationHandler for App {
             window.clone(),
         ));
         self.state = Some(state);
-
+        
+        window.set_visible(true);
         window.request_redraw();
     }
 
