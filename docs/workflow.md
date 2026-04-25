@@ -33,17 +33,13 @@ These issues are created as sub-issues for the Layer 2 issues, and outline what 
 
 ## 4. Issues
 
+The following instructions apply to issues created outside of the milestone planning process. Because these issues are still connected to a milestone, they should be created under the specific milestone they pertain to. 
+
 An issue ***should*** be created for:
 
-- Problems that exist in code you are not currently assigned to modify
-- Improvements/Changes in code you are not currently assigned to modify
-- Improvements/Changes in code that may require changes in other features
+- Problems in **any** code, regardless of whether you are currently assigned to modify it
+- Improvements/Changes in **any** code, regardless of whether you are currently assigned to modify it
 - Feature suggestions
-
-An issue ***should not*** be created for:
-
-- Problems that exist in code you are writing/modifying
-- Improvements/Changes in a feature you are assigned to, that does not impact other features
 
 ### 4.1 Create issues with code reference
 1. Open the file in GitHub
