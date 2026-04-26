@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use std::fmt::Error;
-use rayon::vec;
 use serde::{Serialize, Deserialize};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
