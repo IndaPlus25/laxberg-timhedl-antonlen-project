@@ -39,3 +39,32 @@ impl fmt::Display for FileParseError {
         }
     }
 }
+
+
+#[derive(Debug)]
+pub enum SaveAndLoadError{
+    IoError(std::io::Error),
+    NotSupportedFileFormat(Option<String>),
+}
+
+impl From<std::io::Error> for SaveAndLoadError {
+    fn from(err: std::io::Error) -> Self {
+        SaveAndLoadError::IoError(err)
+    }
+}
+
+impl fmt::Display for SaveAndLoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SaveAndLoadError::IoError(error) => write!(f, "Failed due to Io Error '{}'", error),
+            
+            SaveAndLoadError::NotSupportedFileFormat(option) => {
+                if let Some(format) = option {
+                    write!(f, "Could not parse file, the '{}' format is not supported yet", format)
+                } else {
+                    write!(f, "The input you selected is not a file and could not be parsed")
+                }
+            },
+        }
+    }
+}
