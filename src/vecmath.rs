@@ -1,11 +1,13 @@
-#[derive(Copy, Clone, Debug)]
+use serde::Serialize;
+
+#[derive(Copy, Clone, Debug, Serialize)]
 pub struct V3 {
     pub x: f32,
     pub y: f32,
     pub z: f32,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct V3i {
     pub x: i32,
     pub y: i32,
