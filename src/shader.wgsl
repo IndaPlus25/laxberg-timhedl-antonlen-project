@@ -110,12 +110,11 @@ fn get_next_sub_voxel(current: u32, exit_plane: u32) -> u32 {
     return 8u; // 8 betyder "Lämna noden" (return None i Rust)
 }
 
-fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<f32>, chunk_max: vec3<f32>, root_pointer: u32, out_payload: ptr<function, u32>) -> bool {
+fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<f32>, chunk_max: vec3<f32>, chunk_offset: u32, out_payload: ptr<function, u32>) -> bool {
     var direction_mask: u32 = 0u;
     var pos_ray_dir = ray_dir;
     var pos_ray_origin = ray_origin;
 
-    // Spegla ray för SVO traverseringen (exakt som i din kod)
     if (pos_ray_dir.x < 0.0) { direction_mask |= 1u; pos_ray_dir.x = -pos_ray_dir.x; pos_ray_origin.x = chunk_max.x - (ray_origin.x - chunk_min.x); }
     if (pos_ray_dir.y < 0.0) { direction_mask |= 2u; pos_ray_dir.y = -pos_ray_dir.y; pos_ray_origin.y = chunk_max.y - (ray_origin.y - chunk_min.y); }
     if (pos_ray_dir.z < 0.0) { direction_mask |= 4u; pos_ray_dir.z = -pos_ray_dir.z; pos_ray_origin.z = chunk_max.z - (ray_origin.z - chunk_min.z); }
@@ -128,15 +127,16 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
 
     if (t_min >= t_max || t_max < 0.0) { return false; }
 
-    // INITIALISERA STACKEN (Max SVO djup för 32^3 är 5)
     var stack: array<StackFrame, 6>;
-    var sp: i32 = 0; // Stack pointer
+    var sp: i32 = 0; 
+    
+    // ÄNDRING 2: Läs rot-noden från VRAM genom att använda chunk_offset
+    let root_node_data = world_data[chunk_offset];
     
     let mid = (entry + exit) * 0.5;
     let root_sub_voxel = get_first_child_intersect(t_min, entry, mid);
-    stack[0] = StackFrame(root_pointer, root_sub_voxel, entry, exit);
+    stack[0] = StackFrame(root_node_data, root_sub_voxel, entry, exit);
 
-    // ITERATIV PROC_SUBTREE LÖÖP
     while (sp >= 0) {
         let frame = stack[sp];
         let current_node = frame.node_data;
@@ -145,9 +145,8 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
         let f_exit = frame.exit;
         let f_mid = (f_entry + f_exit) * 0.5;
 
-        // Om sub_voxel är 8 eller högre betyder det att vi klivit ur denna voxel. (None)
         if (current_sub > 7u) {
-            sp--; // Pop (Gå upp en nivå)
+            sp--; 
             continue;
         }
 
@@ -157,14 +156,14 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
             let pointer = get_ending(current_node);
             let child_index = pointer + child_pop_count(current_node, true_sub_voxel);
             
-            // HÄMTA NODEN FRÅN VRAM
-            let node_at_index = world_data[child_index];
+            // ÄNDRING 3: HÄR VAR BUGGEN! Vi MÅSTE addera chunk_offset!
+            let node_at_index = world_data[chunk_offset + child_index];
 
             if (is_leaf(current_node, true_sub_voxel)) {
                 *out_payload = get_ending(node_at_index);
                 return true;
             } else {
-                // Bygg childs entry och exit boundaries
+                // ... (resten av koden inuti else-blocket är exakt likadan som innan)
                 let sub_entry = vec3<f32>(
                     select(f_entry.x, f_mid.x, (current_sub & 1u) != 0u),
                     select(f_entry.y, f_mid.y, (current_sub & 2u) != 0u),
@@ -176,7 +175,6 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
                     select(f_mid.z, f_exit.z, (current_sub & 4u) != 0u)
                 );
 
-                // Räkna ut vad NÄSTA sub_voxel för vår nuvarande nivå ska bli när vi kommer tillbaka!
                 let node_exit = vec3<f32>(
                     select(f_mid.x, f_exit.x, (current_sub & 1u) != 0u),
                     select(f_mid.y, f_exit.y, (current_sub & 2u) != 0u),
@@ -184,10 +182,8 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
                 );
                 let exit_plane = vec_exit_plane(node_exit);
                 
-                // Uppdatera nuvarande frame innan vi går djupare
                 stack[sp].sub_voxel = get_next_sub_voxel(current_sub, exit_plane);
 
-                // PUSH: Dyk ner en nivå!
                 sp++;
                 let child_t_min = max(sub_entry.x, max(sub_entry.y, sub_entry.z));
                 let child_mid = (sub_entry + sub_exit) * 0.5;
@@ -196,7 +192,6 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
             }
         }
 
-        // Om inget barn fanns, stega till nästa sub_voxel direkt
         let node_exit = vec3<f32>(
             select(f_mid.x, f_exit.x, (current_sub & 1u) != 0u),
             select(f_mid.y, f_exit.y, (current_sub & 2u) != 0u),
@@ -278,7 +273,7 @@ fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: pt
         t_max.z = (origin.z - (f32(chunk_pos.z) * chunk_size)) * -inv_dir.z;
     }
 
-    // DDA LÖÖPEN
+    // DDA LOOPEN
     for (var i = 0u; i < limit; i++) {
         let chunk_root_ptr = get_chunk_root_pointer(chunk_pos);
         
@@ -287,7 +282,7 @@ fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: pt
             let chunk_max = chunk_min + vec3<f32>(chunk_size);
             
             // Dyk in i Micro SVO-traverseringen
-            if (find_intersection(origin, direction, chunk_min, chunk_max, world_data[chunk_root_ptr], out_payload)) {
+            if (find_intersection(origin, direction, chunk_min, chunk_max, chunk_root_ptr, out_payload)) {
                 return true;
             }
         }
