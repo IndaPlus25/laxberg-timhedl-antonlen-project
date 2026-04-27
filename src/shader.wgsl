@@ -213,13 +213,25 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
 // 5. MAKRO-TRAVERSERING (Från cast_ray i octree.rs)
 // ==========================================
 
-// Dummy lookup funktion - I framtiden kommer du byta denna mot en koll i din Chunk Macro Grid
 fn get_chunk_root_pointer(chunk_pos: vec3<i32>) -> u32 {
-    // Returnerar offset till roten av chunk-trädet inuti `world_data`
-    // Om chunk inte finns, returnera 0xFFFFFFFFu
-    if (chunk_pos.x == 0 && chunk_pos.y == 0 && chunk_pos.z == 0) {
-        return 0u; // Låtsas att Chunk (0,0,0) ligger på index 0
+    let grid_size = 16;
+    let offset = 8;
+    
+    // Konvertera den oändliga världs-koordinaten till vårat 16x16x16 nät
+    let gx = chunk_pos.x + offset;
+    let gy = chunk_pos.y + offset;
+    let gz = chunk_pos.z + offset;
+    
+    // Är vi inom det område vi har laddat upp till grafikkortet?
+    if (gx >= 0 && gx < grid_size && gy >= 0 && gy < grid_size && gz >= 0 && gz < grid_size) {
+        // Räkna ut vilket 1D-index detta motsvarar (Z-order eller linear, vi kör linear här för kartan)
+        let grid_index = u32((gx * grid_size * grid_size) + (gy * grid_size) + gz);
+        
+        // Returnera pekaren som vi sparade i Rust!
+        return world_data[grid_index];
     }
+    
+    // Ligger utanför render-distansen, returnera "Tom"
     return 0xFFFFFFFFu;
 }
 
@@ -336,7 +348,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var payload: u32 = 0u;
     let hit = cast_ray(camera.position, ray_dir, 32u, &payload);
 
-    var final_color = vec4<f32>(1.0, 0.0, 0.0, 1.0); // Svart bakgrund
+    var final_color = vec4<f32>(0.0, 0.0, 0.0, 1.0); // Svart bakgrund
 
     if (hit) {
         // Exakt samma färgsättning som du hade!

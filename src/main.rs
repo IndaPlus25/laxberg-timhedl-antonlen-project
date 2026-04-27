@@ -65,7 +65,7 @@ struct State {
 }
 
 impl State {
-    async fn new(display: OwnedDisplayHandle, window: Arc<Window>) -> State {
+    async fn new(display: OwnedDisplayHandle, window: Arc<Window>, gpu_world_data: &[u32]) -> State {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(
             Box::new(display),
         ));
@@ -106,10 +106,9 @@ impl State {
         });
 
         // 2. SKAPA WORLD BUFFER (Storage)
-        let dummy_world_data = vec![0u32; 1024]; 
         let world_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("World Storage Buffer"),
-            contents: bytemuck::cast_slice(&dummy_world_data),
+            contents: bytemuck::cast_slice(gpu_world_data),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -319,9 +318,12 @@ impl ApplicationHandler for App {
                 .unwrap(),
         );
 
+        let packed_world = pack_world_to_gpu(&self.chunks);
+
         let state = pollster::block_on(State::new(
             event_loop.owned_display_handle(),
             window.clone(),
+            &packed_world,
         ));
         self.state = Some(state);
         

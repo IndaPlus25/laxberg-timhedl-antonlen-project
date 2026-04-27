@@ -14,6 +14,31 @@ struct SvoChild {
     pos: V3i,
 }
 
+pub fn pack_world_to_gpu(chunks: &HashMap<V3i, Chunk>) -> Vec<u32> {
+    let grid_size = 16;  
+    let offset = 8;     
+
+    let mut gpu_data = vec![0xFFFFFFFFu32; (grid_size * grid_size * grid_size) as usize];
+
+    for (pos, chunk) in chunks.iter() {
+        let gx = pos.x + offset;
+        let gy = pos.y + offset;
+        let gz = pos.z + offset;
+
+        if gx >= 0 && gx < grid_size && gy >= 0 && gy < grid_size && gz >= 0 && gz < grid_size {
+            let grid_index = (gx * grid_size * grid_size) + (gy * grid_size) + gz;
+
+            let start_pointer = gpu_data.len() as u32;
+
+            gpu_data[grid_index as usize] = start_pointer;
+
+            gpu_data.extend_from_slice(&chunk.data);
+        }
+    }
+
+    gpu_data
+}
+
 pub fn to_chunks(data: &[Vec<Vec<u32>>]) -> HashMap<V3i, Chunk> {
     let width = data.len();
     let height = if width > 0 { data[0].len() } else { 0 };
