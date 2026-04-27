@@ -4,7 +4,6 @@ mod error;
 
 mod octree;
 mod vecmath;
-mod renderer;
 mod builder;
 mod worldgen;
 
@@ -21,18 +20,32 @@ use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
 use crate::vecmath::*;
-use crate::renderer::*;
 use crate::octree::*;
 use crate::builder::*;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PlayerUniform {
+    pub position: [f32; 3],
+    pub _padding: u32,
+    pub direction: [f32; 2],
+    pub fov: f32,
+    pub aspect_ratio: f32,
+}
+
+pub struct Player {
+    pub position: V3,
+    pub direction: (f32, f32),
+}
 
 struct App {
     state: Option<State>,
     chunks: HashMap<V3i, Chunk>,
 
-    last_fps_update: Instant,
-    frames_this_second: u32,
     player: Player,
 
+    last_fps_update: Instant,
+    frames_this_second: u32,
 }
 
 struct State {
@@ -46,7 +59,9 @@ struct State {
 
     compute_pipeline: wgpu::ComputePipeline,
     bind_group_layout: wgpu::BindGroupLayout,
-    color_buffer: wgpu::Buffer,
+
+    player_buffer: wgpu::Buffer,
+    world_buffer: wgpu::Buffer,
 }
 
 impl State {
@@ -62,7 +77,6 @@ impl State {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    // Vi ber fortfarande om tillåtelse att skriva till skärmen!
                     required_features: wgpu::Features::BGRA8UNORM_STORAGE,
                     ..Default::default()
                 }
@@ -73,17 +87,29 @@ impl State {
         let size = window.inner_size();
 
         let surface = instance.create_surface(window.clone()).unwrap();
-        let cap = surface.get_capabilities(&adapter);
 
         let surface_format = wgpu::TextureFormat::Bgra8Unorm;
 
-        // 1. SKAPA FÄRGDATAN (Lila)
-        let my_cpu_color: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+        // 1. SKAPA PLAYER BUFFER (Uniform)
+        let initial_player = PlayerUniform {
+            position: [0.0, 0.0, 0.0],
+            _padding: 0,
+            direction: [0.0, 0.0],
+            fov: 90.0_f32.to_radians(),
+            aspect_ratio: size.width as f32 / size.height as f32,
+        };
 
-        // 2. LADDA UPP FÄRGEN TILL GPU:n
-        let color_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Color Buffer"),
-            contents: bytemuck::cast_slice(&my_cpu_color),
+        let player_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Player Uniform Buffer"),
+            contents: bytemuck::cast_slice(&[initial_player]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        // 2. SKAPA WORLD BUFFER (Storage)
+        let dummy_world_data = vec![0u32; 1024]; 
+        let world_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("World Storage Buffer"),
+            contents: bytemuck::cast_slice(&dummy_world_data),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -91,23 +117,38 @@ impl State {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Main Bind Group Layout"),
             entries: &[
+                // Binding 0: Kamera (Uniform Buffer)
                 wgpu::BindGroupLayoutEntry {
-                    binding: 0, // Vår color_buffer
+                    binding: 0,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        // VIKTIGT: Nu är det en Uniform!
+                        ty: wgpu::BufferBindingType::Uniform, 
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1, // Vår skärm
+                // Binding 1: Skärmen (Storage Texture)
+            wgpu::BindGroupLayoutEntry {
+                    binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         access: wgpu::StorageTextureAccess::WriteOnly,
                         format: surface_format,
                         view_dimension: wgpu::TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+                // Binding 2: Världsdatan / Chunks (Storage Buffer, Read Only)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        // VIKTIGT: SVO-datan är gigantisk, så det måste vara Storage
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
                     count: None,
                 },
@@ -146,7 +187,8 @@ impl State {
             surface_format,
             compute_pipeline,
             bind_group_layout,
-            color_buffer,
+            player_buffer,
+            world_buffer,
         };
 
         state.configure_surface();
@@ -178,7 +220,7 @@ impl State {
         self.configure_surface();
     }
 
-    fn render(&mut self) {
+    fn render(&mut self, player: &Player) {
         // Create texture view.
         // NOTE: We must handle Timeout because the surface may be unavailable
         // (e.g., when the window is occluded on macOS).
@@ -206,18 +248,33 @@ impl State {
 
         let texture_view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        // BYGG BRON FÖR DENNA BILDRUTA
+        let aspect_ratio = self.size.width as f32 / self.size.height as f32;
+        let player_uniform = PlayerUniform {
+            position: [player.position.x, player.position.y, player.position.z],
+            _padding: 0,
+            direction: [player.direction.0, player.direction.1], // yaw och pitch
+            fov: 90.0_f32.to_radians(), // Du kan göra FOV dynamisk senare!
+            aspect_ratio,
+        };
+        // Skriv över datan i VRAM
+        self.queue.write_buffer(&self.player_buffer, 0, bytemuck::cast_slice(&[player_uniform]));
+
+        // --- BYGG BRON (Med alla 3 bindings) ---
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Main Bind Group"),
             layout: &self.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.color_buffer.as_entire_binding(),
+                    binding: 0, // Uniform Kameran
+                    resource: self.player_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 1,
+                    binding: 1, // Skärmen
                     resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2, // SVO Chunks (Just nu vår dummy_world_data)
+                    resource: self.world_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -280,7 +337,7 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                state.render();
+                state.render(&self.player);
                 // Emits a new redraw requested event.
                 state.get_window().request_redraw();
 
@@ -337,7 +394,7 @@ fn main() {
         chunks, 
         last_fps_update: Instant::now(),
         frames_this_second: 0,
-        player, 
+        player,
     };
 
     println!("Launching Raycaster...");
