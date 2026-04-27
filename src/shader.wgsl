@@ -336,7 +336,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var payload: u32 = 0u;
     let hit = cast_ray(camera.position, ray_dir, 32u, &payload);
 
-    var final_color = vec4<f32>(0.0, 0.0, 0.0, 1.0); // Svart bakgrund
+    var final_color = vec4<f32>(1.0, 0.0, 0.0, 1.0); // Svart bakgrund
 
     if (hit) {
         // Exakt samma färgsättning som du hade!
