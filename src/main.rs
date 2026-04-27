@@ -26,8 +26,9 @@ use crate::renderer::*;
 use crate::octree::*;
 use crate::builder::*;
 
-/*
 struct App {
+    state: Option<State>,
+
     window: Option<Rc<Window>>,
     surface: Option<Surface<Rc<Window>, Rc<Window>>>,
     chunks: HashMap<V3i, Chunk>,
@@ -35,9 +36,8 @@ struct App {
     last_fps_update: Instant,
     frames_this_second: u32,
     player: Player,
-}
-*/
 
+}
 
 struct State {
     instance: wgpu::Instance,
@@ -99,7 +99,7 @@ impl State {
             width: self.size.width,
             height: self.size.height,
             desired_maximum_frame_latency: 2,
-            present_mode: wgpu::PresentMode::AutoVsync,
+            present_mode: wgpu::PresentMode::AutoNoVsync,
         };
         self.surface.configure(&self.device, &surface_config);
     }
@@ -177,10 +177,7 @@ impl State {
     }
 }
 
-#[derive(Default)]
-struct App {
-    state: Option<State>,
-}
+
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -215,6 +212,19 @@ impl ApplicationHandler for App {
                 state.render();
                 // Emits a new redraw requested event.
                 state.get_window().request_redraw();
+
+                //Fps counter:
+                self.frames_this_second += 1;
+
+                let elapsed = self.last_fps_update.elapsed();
+
+                if elapsed.as_secs_f32() >= 1.0 {
+                    let fps = self.frames_this_second as f32 / elapsed.as_secs_f32();
+                    state.window.set_title(&format!("Raycaster - {:.2} FPS", fps));
+
+                    self.frames_this_second = 0;
+                    self.last_fps_update = Instant::now();
+                }
             }
             WindowEvent::Resized(size) => {
                 // Reconfigures the size of the surface. We do not re-render
@@ -246,9 +256,38 @@ fn main() {
     // is happening, which is preferred if the application might be idling in
     // the background.
     // event_loop.set_control_flow(ControlFlow::Wait);
+    
+    let mesh = file_parser::file_parse_interface("Susan.obj").unwrap().clone();
+    let world_data = voxelizer::voxel_grid_from_triangles(mesh, 50);
 
-    let mut app = App::default();
+    println!("Compressing world into Sparse Voxel Octrees...");
+    let chunks = to_chunks(&world_data);
+    println!("Successfully built {} chunks!", chunks.len());
+
+
+    let player = Player {
+        position: V3{
+            x: -60.5,
+            y: 20.1,
+            z: 0.1,
+        },
+        // direction: (0.0, -std::f32::consts::FRAC_PI_2)               
+        direction: (std::f32::consts::FRAC_PI_3, 0.0)               
+    };
+    
+    let mut app = App {
+        state: None,
+        window: None,
+        surface: None,
+        chunks, // This will cleanly move your 'chunks' variable in
+        last_fps_update: Instant::now(),
+        frames_this_second: 0,
+        player, // This will cleanly move your 'player' variable in
+    };
+
+    println!("Launching Raycaster...");
     event_loop.run_app(&mut app).unwrap();
+
 }
 
 /*
