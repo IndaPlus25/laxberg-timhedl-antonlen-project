@@ -1,4 +1,5 @@
 use std::fmt;
+use bincode::Error;
 
 #[derive(Debug)]
 pub enum FileParseError{
@@ -45,6 +46,7 @@ impl fmt::Display for FileParseError {
 pub enum SaveAndLoadError{
     IoError(std::io::Error),
     NotSupportedFileFormat(Option<String>),
+    BincodeError(bincode::Error),
 }
 
 impl From<std::io::Error> for SaveAndLoadError {
@@ -53,10 +55,17 @@ impl From<std::io::Error> for SaveAndLoadError {
     }
 }
 
+impl From<bincode::Error> for SaveAndLoadError {
+    fn from(err: bincode::Error) -> Self {
+        SaveAndLoadError::BincodeError(err)
+    }
+}
+
 impl fmt::Display for SaveAndLoadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SaveAndLoadError::IoError(error) => write!(f, "Failed due to Io Error '{}'", error),
+            SaveAndLoadError::BincodeError(error) => write!(f, "Failed due to Bincode Error '{}'", error),
             
             SaveAndLoadError::NotSupportedFileFormat(option) => {
                 if let Some(format) = option {

@@ -5,6 +5,7 @@ use std::io::{BufReader, BufWriter};
 
 use crate::vecmath::*;
 use crate::octree::*;
+use crate::error::*;
 
 #[derive(Serialize)]
 struct FormatedChunkRef<'a> {
@@ -23,13 +24,11 @@ struct FormatedChunk {
 }
 
 /// this is the interface to interact with the file_handler when saving a file.
-pub fn save_file_interface(filepath: &str, data: &HashMap<V3i, Chunk>) -> Result<(), Box<dyn std::error::Error>>{
-    save_file(filepath, &data)?;
-
-    Ok(())
+pub fn save_file_interface(filepath: &str, data: &HashMap<V3i, Chunk>) -> Result<(), SaveAndLoadError>{
+    save_file(filepath, &data)
 }
 
-fn save_file(filepath: &str, data: &HashMap<V3i, Chunk>) -> Result<(), Box<dyn std::error::Error>>{
+fn save_file(filepath: &str, data: &HashMap<V3i, Chunk>) -> Result<(), SaveAndLoadError>{
     let file = File::create(filepath)?;
     let writer = BufWriter::new(file);
 
@@ -39,7 +38,7 @@ fn save_file(filepath: &str, data: &HashMap<V3i, Chunk>) -> Result<(), Box<dyn s
     Ok(())
 }
 
-fn parse_chunks(data: &HashMap<V3i, Chunk>) -> Vec<FormatedChunkRef>{
+fn parse_chunks(data: &'_ HashMap<V3i, Chunk>) -> Vec<FormatedChunkRef<'_>>{
     let mut parsed_chunks: Vec<FormatedChunkRef> = vec![];
     
     for entry in data{
@@ -58,13 +57,13 @@ fn parse_chunks(data: &HashMap<V3i, Chunk>) -> Vec<FormatedChunkRef>{
 
 
 /// this is the interface to interact with the file_handler when loading a file.
-pub fn load_file_interface(filepath: &str) -> Result<HashMap<V3i, Chunk>, Box<dyn std::error::Error>>{
+pub fn load_file_interface(filepath: &str) -> Result<HashMap<V3i, Chunk>, SaveAndLoadError>{
     let data = load_file(filepath)?;
 
     Ok(data)
 }
 
-fn load_file(filepath: &str) -> Result<HashMap<V3i, Chunk>, Box<dyn std::error::Error>> {
+fn load_file(filepath: &str) -> Result<HashMap<V3i, Chunk>, SaveAndLoadError> {
     let file = File::open(filepath)?;
     let reader = BufReader::new(file);
 
