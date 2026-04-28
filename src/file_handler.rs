@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use serde::{Serialize, Deserialize};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
@@ -25,10 +26,20 @@ struct FormatedChunk {
 
 /// this is the interface to interact with the file_handler when saving a file.
 pub fn save_file_interface(filepath: &str, data: &HashMap<V3i, Chunk>) -> Result<(), SaveAndLoadError>{
-    save_file(filepath, &data)
+    let path = Path::new(filepath);
+    let extension = path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext|ext.to_lowercase());
+    
+    match extension.as_deref() {
+        Some("bin") => {},
+        _ => {SaveAndLoadError::NotSupportedFileFormat(extension);},
+    }
+    
+    save_file(path, &data)
 }
 
-fn save_file(filepath: &str, data: &HashMap<V3i, Chunk>) -> Result<(), SaveAndLoadError>{
+fn save_file(filepath: &Path, data: &HashMap<V3i, Chunk>) -> Result<(), SaveAndLoadError>{
     let file = File::create(filepath)?;
     let writer = BufWriter::new(file);
 
@@ -58,12 +69,22 @@ fn parse_chunks(data: &'_ HashMap<V3i, Chunk>) -> Vec<FormatedChunkRef<'_>>{
 
 /// this is the interface to interact with the file_handler when loading a file.
 pub fn load_file_interface(filepath: &str) -> Result<HashMap<V3i, Chunk>, SaveAndLoadError>{
-    let data = load_file(filepath)?;
+    let path = Path::new(filepath);
+    let extension = path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext|ext.to_lowercase());
+    
+    match extension.as_deref() {
+        Some("bin") => {},
+        _ => {SaveAndLoadError::NotSupportedFileFormat(extension);},
+    }
+    
+    let data = load_file(path)?;
 
     Ok(data)
 }
 
-fn load_file(filepath: &str) -> Result<HashMap<V3i, Chunk>, SaveAndLoadError> {
+fn load_file(filepath: &Path) -> Result<HashMap<V3i, Chunk>, SaveAndLoadError> {
     let file = File::open(filepath)?;
     let reader = BufReader::new(file);
 
