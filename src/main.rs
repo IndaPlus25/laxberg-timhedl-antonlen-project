@@ -75,6 +75,7 @@ struct App {
     chunks: HashMap<V3i, Chunk>,
 
     player: Player,
+    key_presses: KeyPresses,
 
     last_fps_update: Instant,
     frames_this_second: u32,
@@ -429,6 +430,7 @@ fn main() {
         last_fps_update: Instant::now(),
         frames_this_second: 0,
         player,
+        key_presses: KeyPresses::new(),
     };
 
     println!("Launching Raycaster...");
