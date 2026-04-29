@@ -6,8 +6,9 @@ mod octree;
 mod vecmath;
 mod builder;
 mod worldgen;
+mod renderer;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, f32::consts::FRAC_2_PI};
 use std::rc::Rc;
 use winit::{
     application::ApplicationHandler,
@@ -22,15 +23,19 @@ use wgpu::util::DeviceExt;
 use crate::vecmath::*;
 use crate::octree::*;
 use crate::builder::*;
+use crate::renderer::*;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PlayerUniform {
     pub position: [f32; 3],
-    pub _padding: u32,
-    pub direction: [f32; 2],
-    pub fov: f32,
-    pub aspect_ratio: f32,
+    pub _padding1: u32,
+    pub top_left: [f32; 3],
+    pub _padding2: u32,
+    pub delta_x: [f32; 3],
+    pub _padding3: u32,
+    pub delta_y: [f32; 3],
+    pub _padding4: u32,
 }
 
 pub struct Player {
@@ -46,6 +51,7 @@ struct App {
 
     last_fps_update: Instant,
     frames_this_second: u32,
+    current_acc_fps: f32,
 }
 
 struct State {
@@ -93,10 +99,13 @@ impl State {
         // 1. SKAPA PLAYER BUFFER (Uniform)
         let initial_player = PlayerUniform {
             position: [0.0, 0.0, 0.0],
-            _padding: 0,
-            direction: [0.0, 0.0],
-            fov: 90.0_f32.to_radians(),
-            aspect_ratio: size.width as f32 / size.height as f32,
+            _padding1: 0,
+            top_left: [0.0, 0.0, 0.0],
+            _padding2: 0,
+            delta_x: [0.0, 0.0, 0.0],
+            _padding3: 0,
+            delta_y: [0.0, 0.0, 0.0],
+            _padding4: 0,
         };
 
         let player_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -207,7 +216,7 @@ impl State {
             width: self.size.width,
             height: self.size.height,
             desired_maximum_frame_latency: 2,
-            present_mode: wgpu::PresentMode::AutoVsync,
+            present_mode: wgpu::PresentMode::AutoNoVsync,
         };
         self.surface.configure(&self.device, &surface_config);
     }
@@ -247,13 +256,18 @@ impl State {
 
         let texture_view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let aspect_ratio = self.size.width as f32 / self.size.height as f32;
+        let fov = std::f32::consts::PI / 2.0;
+        let result: (V3, V3, V3) = render_starter(self.size.width, self.size.height, fov, player.direction);
+
         let player_uniform = PlayerUniform {
             position: [player.position.x, player.position.y, player.position.z],
-            _padding: 0,
-            direction: [player.direction.0, player.direction.1], // yaw och pitch
-            fov: 90.0_f32.to_radians(), // Du kan göra FOV dynamisk senare!
-            aspect_ratio,
+            _padding1: 0,
+            top_left: [result.0.x, result.0.y, result.0.z],
+            _padding2: 0,
+            delta_x: [result.1.x, result.1.y, result.1.z],
+            _padding3: 0,
+                delta_y: [result.2.x, result.2.y, result.2.z],
+            _padding4: 0,
         };
         // Skriv över datan i VRAM
         self.queue.write_buffer(&self.player_buffer, 0, bytemuck::cast_slice(&[player_uniform]));
@@ -360,6 +374,11 @@ impl ApplicationHandler for App {
                 // Reconfigures the size of the surface. We do not re-render
                 // here as this event is always followed up by redraw request.
                 state.resize(size);
+
+                //Fps reset:
+                self.last_fps_update = Instant::now();
+                self.frames_this_second = 0;
+                self.current_acc_fps = 0.0;
             }
             _ => (),
         }
@@ -397,6 +416,7 @@ fn main() {
         last_fps_update: Instant::now(),
         frames_this_second: 0,
         player,
+        current_acc_fps: 0.0,
     };
 
     println!("Launching Raycaster...");

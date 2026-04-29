@@ -22,7 +22,40 @@ pub fn default_color(buffer: &mut [u32], width: u32, height: u32) {
     }
 }
 
-pub fn raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, player: &Player, chunks: &HashMap<V3i, Chunk>) {
+pub fn render_starter(width: u32, height: u32, fov: f32, direction: (f32, f32)) -> (V3, V3, V3) {
+    
+    let aspect_ratio = width as f32/height as f32;
+
+    let plane_width = 2.0 * (fov / 2.0).tan();
+    let plane_height = plane_width / aspect_ratio;
+
+    let global_up = V3 { x: 0.0, y: 1.0, z: 0.0 };
+
+    let forward_vec = V3 {
+        x: (direction.1).cos() * (direction.0).sin(),
+        y: (direction.1).sin(),
+        z: (direction.1).cos() * (direction.0).cos()
+    };
+
+    let right_vec = vec_normalize(&vec_crossp(&global_up, &forward_vec));
+    let up_vec = vec_normalize(&vec_crossp(&forward_vec, &right_vec));
+
+    let top_left_vec = vec_add(
+        &vec_sub(&forward_vec, &vec_mult_scal(&right_vec, plane_width / 2.0)), 
+        &vec_mult_scal(&up_vec, plane_height / 2.0)
+    );
+
+    let step_x_size = plane_width / width as f32;
+    let step_y_size = plane_height / height as f32;
+    
+    let delta_x = vec_mult_scal(&right_vec, step_x_size);
+    let delta_y = vec_mult_scal(&up_vec, -step_y_size);
+
+    (top_left_vec, delta_x, delta_y)
+
+}
+
+pub fn cpu_raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, player: &Player, chunks: &HashMap<V3i, Chunk>) {
 
     let aspect_ratio = width as f32/height as f32;
 

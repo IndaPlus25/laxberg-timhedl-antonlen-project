@@ -4,9 +4,9 @@
 
 struct Camera {
     position: vec3<f32>,
-    direction: vec2<f32>, // x = yaw, y = pitch
-    fov: f32,
-    aspect_ratio: f32,
+    top_left: vec3<f32>,
+    delta_x: vec3<f32>,
+    delta_y: vec3<f32>,
 }
 
 @group(0) @binding(0) var<uniform> camera: Camera;
@@ -16,7 +16,7 @@ struct Camera {
 @group(0) @binding(2) var<storage, read> world_data: array<u32>; 
 
 // ==========================================
-// 2. HJÄLPFUNKTIONER (Från vecmath.rs)
+// 2. HJÄLPFUNKTIONER (vecmath.rs)
 // ==========================================
 
 fn vec_entry_plane(v: vec3<f32>) -> u32 {
@@ -32,7 +32,7 @@ fn vec_exit_plane(v: vec3<f32>) -> u32 {
 }
 
 // ==========================================
-// 3. BITWISE FUNKTIONER (Från octree.rs)
+// 3. BITWISE FUNKTIONER (octree.rs)
 // ==========================================
 
 fn get_ending(data: u32) -> u32 {
@@ -57,7 +57,7 @@ fn child_pop_count(data: u32, true_sub_voxel: u32) -> u32 {
 }
 
 // ==========================================
-// 4. MIKRO-TRAVERSERING (Ersätter proc_subtree via Stack)
+// 4. MIKRO-TRAVERSERING (proc_subtree Stack)
 // ==========================================
 
 // Eftersom vi inte kan använda rekursion, sparar vi "vart vi är" i denna struct
@@ -90,7 +90,7 @@ fn get_first_child_intersect(t_min: f32, entry: vec3<f32>, mid: vec3<f32>) -> u3
     return first_child;
 }
 
-// Detta är Revelles et al. transition tabell exakt som i din Rust-kod
+// Revelles et al. transition tabell 
 fn get_next_sub_voxel(current: u32, exit_plane: u32) -> u32 {
     if (current == 0u) {
         if (exit_plane == 0u) { return 1u; } else if (exit_plane == 1u) { return 2u; } else { return 4u; }
@@ -130,7 +130,6 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
     var stack: array<StackFrame, 6>;
     var sp: i32 = 0; 
     
-    // ÄNDRING 2: Läs rot-noden från VRAM genom att använda chunk_offset
     let root_node_data = world_data[chunk_offset];
     
     let mid = (entry + exit) * 0.5;
@@ -156,14 +155,12 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
             let pointer = get_ending(current_node);
             let child_index = pointer + child_pop_count(current_node, true_sub_voxel);
             
-            // ÄNDRING 3: HÄR VAR BUGGEN! Vi MÅSTE addera chunk_offset!
             let node_at_index = world_data[chunk_offset + child_index];
 
             if (is_leaf(current_node, true_sub_voxel)) {
                 *out_payload = get_ending(node_at_index);
                 return true;
             } else {
-                // ... (resten av koden inuti else-blocket är exakt likadan som innan)
                 let sub_entry = vec3<f32>(
                     select(f_entry.x, f_mid.x, (current_sub & 1u) != 0u),
                     select(f_entry.y, f_mid.y, (current_sub & 2u) != 0u),
@@ -205,19 +202,17 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
 }
 
 // ==========================================
-// 5. MAKRO-TRAVERSERING (Från cast_ray i octree.rs)
+// 5. MAKRO-TRAVERSERING (cast_ray octree.rs)
 // ==========================================
 
 fn get_chunk_root_pointer(chunk_pos: vec3<i32>) -> u32 {
     let grid_size = 16;
     let offset = 8;
     
-    // Konvertera den oändliga världs-koordinaten till vårat 16x16x16 nät
     let gx = chunk_pos.x + offset;
     let gy = chunk_pos.y + offset;
     let gz = chunk_pos.z + offset;
     
-    // Är vi inom det område vi har laddat upp till grafikkortet?
     if (gx >= 0 && gx < grid_size && gy >= 0 && gy < grid_size && gz >= 0 && gz < grid_size) {
         // Räkna ut vilket 1D-index detta motsvarar (Z-order eller linear, vi kör linear här för kartan)
         let grid_index = u32((gx * grid_size * grid_size) + (gy * grid_size) + gz);
@@ -234,7 +229,6 @@ fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: pt
     let chunk_size = 32.0;
     var chunk_pos = vec3<i32>(floor(origin / chunk_size));
     
-    // Förhindra division med noll via epsilon check, annars ger WGSL infinities
     var inv_dir = vec3<f32>(
         select(1.0 / direction.x, 9999999.0, abs(direction.x) < 0.000001),
         select(1.0 / direction.y, 9999999.0, abs(direction.y) < 0.000001),
@@ -300,53 +294,30 @@ fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: pt
 }
 
 // ==========================================
-// 6. MAIN (Ersätter raycaster i renderer.rs)
+// 6. MAIN (raycaster renderer.rs)
 // ==========================================
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let dimensions = textureDimensions(screen_texture);
-    let width = f32(dimensions.x);
-    let height = f32(dimensions.y);
-    let x = f32(global_id.x);
-    let y = f32(global_id.y);
 
     if (global_id.x >= dimensions.x || global_id.y >= dimensions.y) {
         return;
     }
 
-    let plane_width = 2.0 * tan(camera.fov / 2.0);
-    let plane_height = plane_width / camera.aspect_ratio;
-    let global_up = vec3<f32>(0.0, 1.0, 0.0);
+    let x = f32(global_id.x);
+    let y = f32(global_id.y);
 
-    // Konvertera direction angles till en framåt-vektor
-    let forward_vec = vec3<f32>(
-        cos(camera.direction.y) * sin(camera.direction.x),
-        sin(camera.direction.y),
-        cos(camera.direction.y) * cos(camera.direction.x)
-    );
+    let ray_dir = camera.top_left + (camera.delta_x * x) + (camera.delta_y * y);
 
-    let right_vec = normalize(cross(global_up, forward_vec));
-    let up_vec = normalize(cross(forward_vec, right_vec));
-
-    let top_left_vec = forward_vec - (right_vec * (plane_width / 2.0)) + (up_vec * (plane_height / 2.0));
-
-    let step_x_size = plane_width / width;
-    let step_y_size = plane_height / height;
-    
-    let delta_x = right_vec * step_x_size;
-    let delta_y = up_vec * -step_y_size;
-
-    let ray_dir = normalize(top_left_vec + (delta_x * x) + (delta_y * y));
-
-    // Kasta strålen!
+    // Kasta strålen
     var payload: u32 = 0u;
     let hit = cast_ray(camera.position, ray_dir, 32u, &payload);
 
     var final_color = vec4<f32>(0.0, 0.0, 0.0, 1.0); // Svart bakgrund
-
+    
+    //färg databas
     if (hit) {
-        // Exakt samma färgsättning som du hade!
         if (payload == 1u) { final_color = vec4<f32>(1.0, 0.0, 0.0, 1.0); }       // Röd
         else if (payload == 2u) { final_color = vec4<f32>(0.0, 1.0, 0.0, 1.0); }  // Grön
         else if (payload == 3u) { final_color = vec4<f32>(0.0, 0.0, 1.0, 1.0); }  // Blå
