@@ -4,6 +4,7 @@
 
 struct Camera {
     position: vec3<f32>,
+    render_distance: u32,
     top_left: vec3<f32>,
     delta_x: vec3<f32>,
     delta_y: vec3<f32>,
@@ -215,27 +216,35 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
 // 5. MAKRO-TRAVERSERING (cast_ray octree.rs)
 // ==========================================
 
-fn get_chunk_root_pointer(chunk_pos: vec3<i32>) -> u32 {
-    let grid_size = 16;
-    let offset = 8;
-    
+fn expand_bits(v: u32) -> u32 {
+    var x = v & 0x000003FFu; 
+    x = (x | (x << 16u)) & 0x030000FFu;
+    x = (x | (x <<  8u)) & 0x0300F00Fu;
+    x = (x | (x <<  4u)) & 0x030C30C3u;
+    x = (x | (x <<  2u)) & 0x09249249u;
+    return x;
+}
+
+fn get_chunk_root_pointer(chunk_pos: vec3<i32>, offset: i32, grid_size: i32) -> u32 {
     let gx = chunk_pos.x + offset;
     let gy = chunk_pos.y + offset;
     let gz = chunk_pos.z + offset;
     
     if (gx >= 0 && gx < grid_size && gy >= 0 && gy < grid_size && gz >= 0 && gz < grid_size) {
-        // Räkna ut vilket 1D-index detta motsvarar (Z-order eller linear, vi kör linear här för kartan)
-        let grid_index = u32((gx * grid_size * grid_size) + (gy * grid_size) + gz);
         
-        // Returnera pekaren som vi sparade i Rust!
+        let morton_x = expand_bits(u32(gx));
+        let morton_y = expand_bits(u32(gy));
+        let morton_z = expand_bits(u32(gz));
+        
+        let grid_index = morton_x | (morton_y << 1u) | (morton_z << 2u);
+        
         return world_data[grid_index];
     }
     
-    // Ligger utanför render-distansen, returnera "Tom"
     return 0xFFFFFFFFu;
 }
 
-fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: ptr<function, u32>) -> bool {
+fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: ptr<function, u32>, offset: i32, render_diameter: i32) -> bool {
     let chunk_size = 32.0;
     var chunk_pos = vec3<i32>(floor(origin / chunk_size));
     
@@ -279,7 +288,7 @@ fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: pt
 
     // DDA LOOPEN
     for (var i = 0u; i < limit; i++) {
-        let chunk_root_ptr = get_chunk_root_pointer(chunk_pos);
+        let chunk_root_ptr = get_chunk_root_pointer(chunk_pos, offset, render_diameter);
         
         if (chunk_root_ptr != 0xFFFFFFFFu) {
             let chunk_min = vec3<f32>(chunk_pos) * chunk_size;
@@ -320,9 +329,14 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let ray_dir = camera.top_left + (camera.delta_x * x) + (camera.delta_y * y);
 
+    let render_radius = i32(camera.render_distance);
+    let render_diameter = render_radius * 2;
+
+    let ray_dda_limit = u32(render_diameter);
+
     // Kasta strålen
     var payload: u32 = 0u;
-    let hit = cast_ray(camera.position, ray_dir, 32u, &payload);
+    let hit = cast_ray(camera.position, ray_dir, ray_dda_limit, &payload, render_radius, render_diameter);
 
     var final_color = vec4<f32>(0.0, 0.0, 0.0, 1.0); // Svart bakgrund
     

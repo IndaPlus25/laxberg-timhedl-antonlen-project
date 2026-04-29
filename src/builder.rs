@@ -14,9 +14,25 @@ struct SvoChild {
     pos: V3i,
 }
 
-pub fn pack_world_to_gpu(chunks: &HashMap<V3i, Chunk>) -> Vec<u32> {
-    let grid_size = 16;  
-    let offset = 8;     
+pub fn expand_bits(mut v: u32) -> u32 {
+    v &= 0x000003FF;
+    v = (v | (v << 16)) & 0x030000FF;
+    v = (v | (v << 8))  & 0x0300F00F;
+    v = (v | (v << 4))  & 0x030C30C3;
+    v = (v | (v << 2))  & 0x09249249;
+    v
+}
+
+pub fn get_morton_index(x: u32, y: u32, z: u32) -> usize {
+    let mx = expand_bits(x);
+    let my = expand_bits(y);
+    let mz = expand_bits(z);
+    (mx | (my << 1) | (mz << 2)) as usize
+}
+
+pub fn pack_world_to_gpu(chunks: &HashMap<V3i, Chunk>, render_distance: u32) -> Vec<u32> {
+    let grid_size = render_distance * 2;
+    let offset = render_distance as i32; 
 
     let mut gpu_data = vec![0xFFFFFFFFu32; (grid_size * grid_size * grid_size) as usize];
 
@@ -25,13 +41,12 @@ pub fn pack_world_to_gpu(chunks: &HashMap<V3i, Chunk>) -> Vec<u32> {
         let gy = pos.y + offset;
         let gz = pos.z + offset;
 
-        if gx >= 0 && gx < grid_size && gy >= 0 && gy < grid_size && gz >= 0 && gz < grid_size {
-            let grid_index = (gx * grid_size * grid_size) + (gy * grid_size) + gz;
-
+        if gx >= 0 && gx < grid_size as i32 && gy >= 0 && gy < grid_size as i32 && gz >= 0 && gz < grid_size as i32 {
+            
+            let grid_index = get_morton_index(gx as u32, gy as u32, gz as u32);
             let start_pointer = gpu_data.len() as u32;
-
-            gpu_data[grid_index as usize] = start_pointer;
-
+            
+            gpu_data[grid_index] = start_pointer;
             gpu_data.extend_from_slice(&chunk.data);
         }
     }

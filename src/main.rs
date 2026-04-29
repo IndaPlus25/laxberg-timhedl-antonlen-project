@@ -29,7 +29,7 @@ use crate::renderer::*;
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PlayerUniform {
     pub position: [f32; 3],
-    pub _padding1: u32,
+    pub render_distance: u32,
     pub top_left: [f32; 3],
     pub _padding2: u32,
     pub delta_x: [f32; 3],
@@ -48,6 +48,7 @@ struct App {
     chunks: HashMap<V3i, Chunk>,
 
     player: Player,
+    render_distance: u32,
 
     last_fps_update: Instant,
     frames_this_second: u32,
@@ -71,7 +72,7 @@ struct State {
 }
 
 impl State {
-    async fn new(display: OwnedDisplayHandle, window: Arc<Window>, gpu_world_data: &[u32]) -> State {
+    async fn new(display: OwnedDisplayHandle, window: Arc<Window>, gpu_world_data: &[u32], render_distance: u32) -> State {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(
             Box::new(display),
         ));
@@ -99,7 +100,7 @@ impl State {
         // 1. SKAPA PLAYER BUFFER (Uniform)
         let initial_player = PlayerUniform {
             position: [0.0, 0.0, 0.0],
-            _padding1: 0,
+            render_distance,
             top_left: [0.0, 0.0, 0.0],
             _padding2: 0,
             delta_x: [0.0, 0.0, 0.0],
@@ -228,7 +229,7 @@ impl State {
         self.configure_surface();
     }
 
-    fn render(&mut self, player: &Player) {
+    fn render(&mut self, player: &Player, render_distance: u32) {
         // Create texture view.
         // NOTE: We must handle Timeout because the surface may be unavailable
         // (e.g., when the window is occluded on macOS).
@@ -261,7 +262,7 @@ impl State {
 
         let player_uniform = PlayerUniform {
             position: [player.position.x, player.position.y, player.position.z],
-            _padding1: 0,
+            render_distance,
             top_left: [result.0.x, result.0.y, result.0.z],
             _padding2: 0,
             delta_x: [result.1.x, result.1.y, result.1.z],
@@ -309,13 +310,12 @@ impl State {
             let workgroups_y = (self.size.height + 7) / 8;
             
             compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
-        } // Compute pass droppas här
+        } 
 
         // SUBMIT OCH PRESENT
         self.queue.submit([encoder.finish()]);
         self.window.pre_present_notify();
-        surface_texture.present(); // Fixad!
-    }
+        surface_texture.present();     }
 }
 
 
@@ -332,12 +332,13 @@ impl ApplicationHandler for App {
                 .unwrap(),
         );
 
-        let packed_world = pack_world_to_gpu(&self.chunks);
+        let packed_world = pack_world_to_gpu(&self.chunks, self.render_distance);
 
         let state = pollster::block_on(State::new(
             event_loop.owned_display_handle(),
             window.clone(),
             &packed_world,
+            self.render_distance,
         ));
         self.state = Some(state);
         
@@ -353,7 +354,7 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                state.render(&self.player);
+                state.render(&self.player, self.render_distance);
                 // Emits a new redraw requested event.
                 state.get_window().request_redraw();
 
@@ -417,6 +418,7 @@ fn main() {
         frames_this_second: 0,
         player,
         current_acc_fps: 0.0,
+        render_distance: 8,
     };
 
     println!("Launching Raycaster...");
