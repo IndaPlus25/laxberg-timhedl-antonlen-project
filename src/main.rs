@@ -38,6 +38,38 @@ pub struct Player {
     pub direction: (f32, f32),
 }
 
+struct KeyPresses {
+    W: bool,
+    A: bool,
+    S: bool,
+    D: bool,
+    Shift: bool,
+    Space: bool,
+    Ctrl: bool,
+    Up: bool,
+    Left: bool,
+    Down: bool,
+    Right: bool
+}
+
+impl KeyPresses {
+    fn new() -> Self {
+        Self {
+            W: false,
+            A: false,
+            S: false,
+            D: false,
+            Shift: false,
+            Space: false,
+            Ctrl: false,
+            Up: false,
+            Left: false,
+            Down: false,
+            Right: false
+        }
+    }
+}
+
 struct App {
     state: Option<State>,
     chunks: HashMap<V3i, Chunk>,
