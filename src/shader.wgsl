@@ -60,12 +60,9 @@ fn child_pop_count(data: u32, true_sub_voxel: u32) -> u32 {
 // 4. MIKRO-TRAVERSERING (proc_subtree Stack)
 // ==========================================
 
-// Eftersom vi inte kan använda rekursion, sparar vi "vart vi är" i denna struct
 struct StackFrame {
     node_data: u32,
     sub_voxel: u32,
-    entry: vec3<f32>,
-    exit: vec3<f32>,
 }
 
 fn get_first_child_intersect(t_min: f32, entry: vec3<f32>, mid: vec3<f32>) -> u32 {
@@ -119,85 +116,113 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
     if (pos_ray_dir.y < 0.0) { direction_mask |= 2u; pos_ray_dir.y = -pos_ray_dir.y; pos_ray_origin.y = chunk_max.y - (ray_origin.y - chunk_min.y); }
     if (pos_ray_dir.z < 0.0) { direction_mask |= 4u; pos_ray_dir.z = -pos_ray_dir.z; pos_ray_origin.z = chunk_max.z - (ray_origin.z - chunk_min.z); }
 
-    let entry = (chunk_min - pos_ray_origin) / pos_ray_dir;
-    let exit = (chunk_max - pos_ray_origin) / pos_ray_dir;
+    let safe_dir = max(pos_ray_dir, vec3<f32>(0.0000001));
+    let pos_inv_dir = vec3<f32>(1.0) / safe_dir;
+
+    let entry = (chunk_min - pos_ray_origin) * pos_inv_dir;
+    let exit = (chunk_max - pos_ray_origin) * pos_inv_dir;
 
     let t_min = max(entry.x, max(entry.y, entry.z));
     let t_max = min(exit.x, min(exit.y, exit.z));
 
     if (t_min >= t_max || t_max < 0.0) { return false; }
 
-    var stack: array<StackFrame, 6>;
+    var stack: array<StackFrame, 5>;
     var sp: i32 = 0; 
     
     let root_node_data = world_data[chunk_offset];
     
+    var current_center = (chunk_min + chunk_max) * 0.5;
+    var current_half_size = (chunk_max.x - chunk_min.x) * 0.5; 
+
     let mid = (entry + exit) * 0.5;
     let root_sub_voxel = get_first_child_intersect(t_min, entry, mid);
-    stack[0] = StackFrame(root_node_data, root_sub_voxel, entry, exit);
+    stack[0] = StackFrame(root_node_data, root_sub_voxel);
 
     while (sp >= 0) {
-        let frame = stack[sp];
-        let current_node = frame.node_data;
-        let current_sub = frame.sub_voxel;
-        let f_entry = frame.entry;
-        let f_exit = frame.exit;
-        let f_mid = (f_entry + f_exit) * 0.5;
+        let current_node = stack[sp].node_data;
+        let raw_sub = stack[sp].sub_voxel;
+        
+        let visited = (raw_sub & 16u) != 0u;
+        
+        // CRITICAL FIX 3: Mask with 15u (1111) to preserve the 8u exit code
+        let actual_sub = raw_sub & 15u; 
 
-        if (current_sub > 7u) {
+        // ASCEND
+        if (actual_sub > 7u) {
             sp--; 
+            if (sp >= 0) {
+                // Backtrack physical center using 15u mask
+                let parent_sub = stack[sp].sub_voxel & 15u;
+                current_center.x -= select(-current_half_size, current_half_size, (parent_sub & 1u) != 0u);
+                current_center.y -= select(-current_half_size, current_half_size, (parent_sub & 2u) != 0u);
+                current_center.z -= select(-current_half_size, current_half_size, (parent_sub & 4u) != 0u);
+                current_half_size *= 2.0;
+            }
             continue;
         }
 
-        let true_sub_voxel = current_sub ^ direction_mask;
+        // Compute current node parameters dynamically
+        let voxel_min = current_center - vec3<f32>(current_half_size);
+        let voxel_max = current_center + vec3<f32>(current_half_size);
+        let f_entry = (voxel_min - pos_ray_origin) * pos_inv_dir;
+        let f_exit = (voxel_max - pos_ray_origin) * pos_inv_dir;
+        let f_mid = (f_entry + f_exit) * 0.5;
+
+        // If we just returned from descending, advance to the next sibling immediately
+        if (visited) {
+            let node_exit = vec3<f32>(
+                select(f_mid.x, f_exit.x, (actual_sub & 1u) != 0u),
+                select(f_mid.y, f_exit.y, (actual_sub & 2u) != 0u),
+                select(f_mid.z, f_exit.z, (actual_sub & 4u) != 0u)
+            );
+            stack[sp].sub_voxel = get_next_sub_voxel(actual_sub, vec_exit_plane(node_exit));
+            continue;
+        }
+        
+        let true_sub_voxel = actual_sub ^ direction_mask;
 
         if (has_child(current_node, true_sub_voxel)) {
             let pointer = get_ending(current_node);
             let child_index = pointer + child_pop_count(current_node, true_sub_voxel);
-            
             let node_at_index = world_data[chunk_offset + child_index];
 
             if (is_leaf(current_node, true_sub_voxel)) {
                 *out_payload = get_ending(node_at_index);
                 return true;
             } else {
-                let sub_entry = vec3<f32>(
-                    select(f_entry.x, f_mid.x, (current_sub & 1u) != 0u),
-                    select(f_entry.y, f_mid.y, (current_sub & 2u) != 0u),
-                    select(f_entry.z, f_mid.z, (current_sub & 4u) != 0u)
-                );
-                let sub_exit = vec3<f32>(
-                    select(f_mid.x, f_exit.x, (current_sub & 1u) != 0u),
-                    select(f_mid.y, f_exit.y, (current_sub & 2u) != 0u),
-                    select(f_mid.z, f_exit.z, (current_sub & 4u) != 0u)
-                );
-
-                let node_exit = vec3<f32>(
-                    select(f_mid.x, f_exit.x, (current_sub & 1u) != 0u),
-                    select(f_mid.y, f_exit.y, (current_sub & 2u) != 0u),
-                    select(f_mid.z, f_exit.z, (current_sub & 4u) != 0u)
-                );
-                let exit_plane = vec_exit_plane(node_exit);
+                // DESCEND: Mark current level as visited (set bit 16) before diving
+                stack[sp].sub_voxel = actual_sub | 16u;
                 
-                stack[sp].sub_voxel = get_next_sub_voxel(current_sub, exit_plane);
+                // Halve the scale and shift center to the chosen child
+                current_half_size *= 0.5;
+                current_center.x += select(-current_half_size, current_half_size, (actual_sub & 1u) != 0u);
+                current_center.y += select(-current_half_size, current_half_size, (actual_sub & 2u) != 0u);
+                current_center.z += select(-current_half_size, current_half_size, (actual_sub & 4u) != 0u);
 
-                sp++;
+                let child_voxel_min = current_center - vec3<f32>(current_half_size);
+                let child_voxel_max = current_center + vec3<f32>(current_half_size);
+                let sub_entry = (child_voxel_min - pos_ray_origin) * pos_inv_dir;
+                let sub_exit = (child_voxel_max - pos_ray_origin) * pos_inv_dir;
+                
                 let child_t_min = max(sub_entry.x, max(sub_entry.y, sub_entry.z));
                 let child_mid = (sub_entry + sub_exit) * 0.5;
-                stack[sp] = StackFrame(node_at_index, get_first_child_intersect(child_t_min, sub_entry, child_mid), sub_entry, sub_exit);
+
+                sp++;
+                stack[sp] = StackFrame(node_at_index, get_first_child_intersect(child_t_min, sub_entry, child_mid));
                 continue;
             }
         }
 
+        // Empty voxel, move to the next sibling
         let node_exit = vec3<f32>(
-            select(f_mid.x, f_exit.x, (current_sub & 1u) != 0u),
-            select(f_mid.y, f_exit.y, (current_sub & 2u) != 0u),
-            select(f_mid.z, f_exit.z, (current_sub & 4u) != 0u)
+            select(f_mid.x, f_exit.x, (actual_sub & 1u) != 0u),
+            select(f_mid.y, f_exit.y, (actual_sub & 2u) != 0u),
+            select(f_mid.z, f_exit.z, (actual_sub & 4u) != 0u)
         );
-        let exit_plane = vec_exit_plane(node_exit);
-        stack[sp].sub_voxel = get_next_sub_voxel(current_sub, exit_plane);
+        stack[sp].sub_voxel = get_next_sub_voxel(actual_sub, vec_exit_plane(node_exit));
     }
-
+    
     return false;
 }
 
