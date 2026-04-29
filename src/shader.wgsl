@@ -88,24 +88,19 @@ fn get_first_child_intersect(t_min: f32, entry: vec3<f32>, mid: vec3<f32>) -> u3
     return first_child;
 }
 
-// Revelles et al. transition tabell 
-fn get_next_sub_voxel(current: u32, exit_plane: u32) -> u32 {
-    if (current == 0u) {
-        if (exit_plane == 0u) { return 1u; } else if (exit_plane == 1u) { return 2u; } else { return 4u; }
-    } else if (current == 1u) {
-        if (exit_plane == 0u) { return 8u; } else if (exit_plane == 1u) { return 3u; } else { return 5u; }
-    } else if (current == 2u) {
-        if (exit_plane == 0u) { return 3u; } else if (exit_plane == 1u) { return 8u; } else { return 6u; }
-    } else if (current == 3u) {
-        if (exit_plane == 0u) { return 8u; } else if (exit_plane == 1u) { return 8u; } else { return 7u; }
-    } else if (current == 4u) {
-        if (exit_plane == 0u) { return 5u; } else if (exit_plane == 1u) { return 6u; } else { return 8u; }
-    } else if (current == 5u) {
-        if (exit_plane == 0u) { return 8u; } else if (exit_plane == 1u) { return 7u; } else { return 8u; }
-    } else if (current == 6u) {
-        if (exit_plane == 0u) { return 7u; } else if (exit_plane == 1u) { return 8u; } else { return 8u; }
-    }
-    return 8u; // 8 betyder "Lämna noden" (return None i Rust)
+// improved Revelles et al. transition tabell 
+fn get_next_sub_voxel(current: u32, exit_plane: u32) -> u32 {    
+    let lut = array<u32, 3>(
+        0x87858381u, // Plane 0 (YZ): [8, 7, 8, 5, 8, 3, 8, 1]
+        0x88768832u, // Plane 1 (XZ): [8, 8, 7, 6, 8, 8, 3, 2]
+        0x88887654u  // Plane 2 (XY): [8, 8, 8, 8, 7, 6, 5, 4]
+    );
+
+    let plane_data = lut[exit_plane];
+
+    let shift = current * 4u;
+    
+    return (plane_data >> shift) & 0xFu;
 }
 
 fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<f32>, chunk_max: vec3<f32>, chunk_offset: u32, out_payload: ptr<function, u32>) -> bool {
