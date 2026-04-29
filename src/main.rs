@@ -394,6 +394,66 @@ impl ApplicationHandler for App {
                 // here as this event is always followed up by redraw request.
                 state.resize(size);
             }
+            WindowEvent::KeyboardInput { event, .. } => {
+                // Ignore if repeated key press
+                if event.repeat {
+                    return;
+                }
+
+                // Get key code and state from press/release
+                let key_code = match event.physical_key {
+                    winit::keyboard::PhysicalKey::Code(key_code) => key_code,
+                    winit::keyboard::PhysicalKey::Unidentified(_) => return,
+                };
+                let state = match event.state {
+                    winit::event::ElementState::Pressed => true,
+                    winit::event::ElementState::Released => false,
+                };
+                
+                match key_code {
+                    // WASD
+                    winit::keyboard::KeyCode::KeyW => {
+                        self.key_presses.W = state;
+                    }
+                    winit::keyboard::KeyCode::KeyA => {
+                        self.key_presses.A = state;
+                    }
+                    winit::keyboard::KeyCode::KeyS => {
+                        self.key_presses.S = state;
+                    }
+                    winit::keyboard::KeyCode::KeyD => {
+                        self.key_presses.D = state;
+                    }
+
+                    // Space
+                    winit::keyboard::KeyCode::Space => {
+                        self.key_presses.Space = state;
+                    }
+                    
+                    // Modifiers
+                    winit::keyboard::KeyCode::ShiftLeft => {
+                        self.key_presses.Shift = state;
+                    }
+                    winit::keyboard::KeyCode::ControlLeft => {
+                        self.key_presses.Ctrl = state;
+                    }
+
+                    // Arrow keys
+                    winit::keyboard::KeyCode::ArrowUp => {
+                        self.key_presses.Up = state;
+                    }
+                    winit::keyboard::KeyCode::ArrowLeft => {
+                        self.key_presses.Left = state;
+                    }
+                    winit::keyboard::KeyCode::ArrowDown => {
+                        self.key_presses.Down = state;
+                    }
+                    winit::keyboard::KeyCode::ArrowRight => {
+                        self.key_presses.Right = state;
+                    }
+                    _ => {}
+                }
+            }
             _ => (),
         }
     }
