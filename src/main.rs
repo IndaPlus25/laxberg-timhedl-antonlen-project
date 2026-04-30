@@ -64,6 +64,13 @@ struct State {
     world_buffer: wgpu::Buffer,
 }
 
+enum Direction {
+    Forward,
+    Back,
+    Left,
+    Right    
+}
+
 impl State {
     async fn new(display: OwnedDisplayHandle, window: Arc<Window>, gpu_world_data: &[u32]) -> State {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(
