@@ -12,8 +12,6 @@ struct Camera {
 
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var screen_texture: texture_storage_2d<bgra8unorm, write>;
-
-// Detta är hela din värld! Alla voxels från alla chunks ligger i en lång lista
 @group(0) @binding(2) var<storage, read> world_data: array<u32>; 
 
 // ==========================================
@@ -252,7 +250,8 @@ fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: pt
     var step = vec3<i32>(0);
     var t_max = vec3<f32>(0.0);
     var t_delta = vec3<f32>(0.0);
-
+    
+    //Divergence here was faster as the warp is almost always identical, maybe some smart calculation around the screen center can be done?
     // X
     t_delta.x = abs(chunk_size * inv_dir.x);
     if (direction.x > 0.0) {

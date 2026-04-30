@@ -163,7 +163,7 @@ pub fn build_chunk(flat_data: &[u32]) -> Vec<u32> {
     build_mipmap_pyramid(&mut pyramid, &level_volume);
     
     // Step 2: Write the compressed pyramid into the final 1D SVO format
-    serialize_svo_bfs(&pyramid, &level_volume)
+    serialize_svo_dfs(&pyramid, &level_volume)
 }
 
 fn build_mipmap_pyramid(pyramid: &mut [Vec<u32>; 6], volumes: &[i32; 6]) {
@@ -220,38 +220,44 @@ fn check_if_prunable(pyramid: &[Vec<u32>; 6], child_level: usize, child_volume: 
     first_val.unwrap_or(AIR_MARKER)
 }
 
-fn serialize_svo_bfs(pyramid: &[Vec<u32>; 6], volumes: &[i32; 6]) -> Vec<u32> {
+fn serialize_svo_dfs(pyramid: &[Vec<u32>; 6], volumes: &[i32; 6]) -> Vec<u32> {
     let mut out_data: Vec<u32> = Vec::with_capacity(1024);
+    
     out_data.push(0);  
 
-    let mut queue = VecDeque::new();
-    queue.push_back((0, V3i { x: 0, y: 0, z: 0 }, 0));
+    build_node_dfs(0, V3i { x: 0, y: 0, z: 0 }, 0, pyramid, volumes, &mut out_data);
     
-    while let Some((level, pos, my_idx)) = queue.pop_front() {
-        let child_level = level + 1;
-        let child_volume = volumes[child_level];
-        
-        let (child_mask, leaf_mask, valid_children) = scan_children_for_serialization(
-            pyramid, child_level, child_volume, &pos
-        );
-        
-        let pointer = out_data.len() as u32;
-        let node_data = (child_mask << 24) | (leaf_mask << 16) | pointer;
-        out_data[my_idx] = node_data;
-        
-        for child in valid_children {
-            let child_out_idx = out_data.len();
-            
-            if child.is_leaf {
-                out_data.push(child.payload); 
-            } else {
-                out_data.push(0);  
-                queue.push_back((child_level, child.pos, child_out_idx));
-            }
+    out_data
+}
+
+fn build_node_dfs(level: usize, pos: V3i, my_idx: usize, pyramid: &[Vec<u32>; 6], volumes: &[i32; 6], out_data: &mut Vec<u32>) {
+    let child_level = level + 1;
+    let child_volume = volumes[child_level];
+    
+    let (child_mask, leaf_mask, valid_children) = scan_children_for_serialization(
+        pyramid, child_level, child_volume, &pos
+    );
+    
+    let pointer = out_data.len() as u32;
+    let node_data = (child_mask << 24) | (leaf_mask << 16) | pointer;
+    out_data[my_idx] = node_data;
+    
+    let children_start = out_data.len();
+    for child in &valid_children {
+        if child.is_leaf {
+            out_data.push(child.payload); 
+        } else {
+            out_data.push(0);  
         }
     }
     
-    out_data
+    let mut current_child_idx = children_start;
+    for child in valid_children {
+        if !child.is_leaf {
+            build_node_dfs(child_level, child.pos, current_child_idx, pyramid, volumes, out_data);
+        }
+        current_child_idx += 1;
+    }
 }
 
 /// Inspects the 8 children, generates the SVO bitmasks, and collects the valid nodes.
