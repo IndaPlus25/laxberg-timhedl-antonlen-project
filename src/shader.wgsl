@@ -13,6 +13,7 @@ struct Camera {
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var screen_texture: texture_storage_2d<bgra8unorm, write>;
 @group(0) @binding(2) var<storage, read> world_data: array<u32>; 
+@group(0) @binding(3) var<storage, read> colour_lut: array<vec4<f32>>;
 
 // ==========================================
 // 2. HJÄLPFUNKTIONER (vecmath.rs)
@@ -385,16 +386,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var payload: u32 = 0u;
     let hit = cast_ray(camera.position, ray_dir, ray_dda_limit, &payload, render_radius, render_diameter);
 
-    var final_color = vec4<f32>(0.0, 0.0, 0.0, 1.0); // Svart bakgrund
+    var final_color = vec4<f32>(0.1, 0.1, 0.1, 1.0); // Svart bakgrund
     
-    //färg databas - will be a cpu buffer sent here later. 
+    //färg databas  
     if (hit) {
-        if (payload == 1u) { final_color = vec4<f32>(1.0, 0.0, 0.0, 1.0); }       // Röd
-        else if (payload == 2u) { final_color = vec4<f32>(0.0, 1.0, 0.0, 1.0); }  // Grön
-        else if (payload == 3u) { final_color = vec4<f32>(0.0, 0.0, 1.0, 1.0); }  // Blå
-        else if (payload == 4u) { final_color = vec4<f32>(1.0, 0.58, 0.0, 1.0); } // Orange
-        else if (payload == 5u) { final_color = vec4<f32>(1.0, 0.83, 0.03, 1.0); }// Gul
-        else { final_color = vec4<f32>(1.0, 1.0, 1.0, 1.0); }                     // Vit
+        let max_index = arrayLength(&colour_lut) - 1u; 
+        final_color = colour_lut[min(payload, max_index)];
     }
 
     textureStore(screen_texture, global_id.xy, final_color);

@@ -49,6 +49,7 @@ struct App {
 
     player: Player,
     render_distance: u32,
+    colours: Vec<[f32; 4]>,
 
     last_fps_update: Instant,
     frames_this_second: u32,
@@ -69,6 +70,7 @@ struct State {
 
     player_buffer: wgpu::Buffer,
     world_buffer: wgpu::Buffer,
+    color_buffer: wgpu::Buffer,
 }
 
 impl State {
@@ -97,7 +99,6 @@ impl State {
 
         let surface_format = wgpu::TextureFormat::Bgra8Unorm;
 
-        // 1. SKAPA PLAYER BUFFER (Uniform)
         let initial_player = PlayerUniform {
             position: [0.0, 0.0, 0.0],
             render_distance,
@@ -115,31 +116,33 @@ impl State {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        // 2. SKAPA WORLD BUFFER (Storage)
         let world_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("World Storage Buffer"),
             contents: bytemuck::cast_slice(gpu_world_data),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
 
-        // 3. SKAPA BIND GROUP LAYOUT (Bron)
+        let color_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Color LUT Buffer"),
+            size: (256 * std::mem::size_of::<[f32; 4]>()) as wgpu::BufferAddress, 
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Main Bind Group Layout"),
             entries: &[
-                // Binding 0: Kamera (Uniform Buffer)
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
-                        // VIKTIGT: Nu är det en Uniform!
                         ty: wgpu::BufferBindingType::Uniform, 
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
                     count: None,
                 },
-                // Binding 1: Skärmen (Storage Texture)
-            wgpu::BindGroupLayoutEntry {
+                wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
@@ -149,18 +152,27 @@ impl State {
                     },
                     count: None,
                 },
-                // Binding 2: Världsdatan / Chunks (Storage Buffer, Read Only)
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
-                        // VIKTIGT: SVO-datan är gigantisk, så det måste vara Storage
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+
             ],
         });
 
@@ -198,6 +210,7 @@ impl State {
             bind_group_layout,
             player_buffer,
             world_buffer,
+            color_buffer,
         };
 
         state.configure_surface();
@@ -224,15 +237,10 @@ impl State {
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         self.size = new_size;
-
-        // reconfigure the surface
         self.configure_surface();
     }
 
-    fn render(&mut self, player: &Player, render_distance: u32) {
-        // Create texture view.
-        // NOTE: We must handle Timeout because the surface may be unavailable
-        // (e.g., when the window is occluded on macOS).
+    fn render(&mut self, player: &Player, render_distance: u32, colours: &[[f32; 4]]) {
         let surface_texture = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(texture) => texture,
             wgpu::CurrentSurfaceTexture::Occluded | wgpu::CurrentSurfaceTexture::Timeout => return,
@@ -272,6 +280,7 @@ impl State {
         };
         // Skriv över datan i VRAM
         self.queue.write_buffer(&self.player_buffer, 0, bytemuck::cast_slice(&[player_uniform]));
+        self.queue.write_buffer(&self.color_buffer, 0, bytemuck::cast_slice(colours));
 
         // --- BYGG BRON (Med alla 3 bindings) ---
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -287,9 +296,14 @@ impl State {
                     resource: wgpu::BindingResource::TextureView(&texture_view),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 2, // SVO Chunks (Just nu vår dummy_world_data)
+                    binding: 2, // SVO Chunks  
                     resource: self.world_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 3, // Färgdatabasen
+                    resource: self.color_buffer.as_entire_binding(),
+                },
+                
             ],
         });
 
@@ -354,7 +368,7 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                state.render(&self.player, self.render_distance);
+                state.render(&self.player, self.render_distance, &self.colours);
                 // Emits a new redraw requested event.
                 state.get_window().request_redraw();
 
@@ -410,7 +424,17 @@ fn main() {
         // direction: (0.0, -std::f32::consts::FRAC_PI_2)               
         direction: (std::f32::consts::FRAC_PI_3, 0.0)               
     };
-    
+
+    let colours: Vec<[f32; 4]> = vec![
+        [1.0, 1.0, 1.0, 1.0],   // 0: Vit också :)
+        [1.0, 0.0, 0.0, 1.0],   // 1: Röd
+        [0.0, 1.0, 0.0, 1.0],   // 2: Grön
+        [0.0, 0.0, 1.0, 1.0],   // 3: Blå
+        [1.0, 0.58, 0.0, 1.0],  // 4: Orange
+        [1.0, 0.83, 0.03, 1.0], // 5: Gul
+        [1.0, 1.0, 1.0, 1.0]    // 6: Vit
+    ];
+
     let mut app = App {
         state: None,
         chunks, 
@@ -419,6 +443,7 @@ fn main() {
         player,
         current_acc_fps: 0.0,
         render_distance: 8,
+        colours,
     };
 
     println!("Launching Raycaster...");
