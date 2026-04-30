@@ -54,26 +54,18 @@ Reality broken! - If we have more time
 ## Work deligation
 
 - (Done) Minimum viable product
-  - Be able to interpret a OBJ file or other 3D file type
+  - Be able to interpret a OBJ file or other 3D file type: **Anton - (Done)**
+
+  - Be able to load the interpreted file into the renderer: **Lucas - (Done)**
     
-    Anton - (Done)
-  - Be able to load the interpreted file into the renderer
-    
-    Lucas - (Done)
-  - Be able to display voxels in different colors
-  
-    Tim - (Done)
+  - Be able to display voxels in different colors: **Tim - (Done)**
     
 - Should have
-  - GPU renderer instead of CPU
-    
-    Tim
-  - Move around in environment
-   
-     Lucas 
-  - Saving and loading files
-   
-     Anton 
+  - GPU renderer instead of CPU: **Tim**
+
+  - Move around in environment: **Lucas**
+  
+  - Saving and loading files: **Anton** 
 
 - Nice to have - TBD
 
