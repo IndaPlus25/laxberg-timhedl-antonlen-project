@@ -121,9 +121,6 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
 
     if (t_min >= t_max || t_max < 0.0) { return false; }
 
-    var stack: array<StackFrame, 5>;
-    var sp: i32 = 0; 
-    
     let root_node_data = world_data[chunk_offset];
     
     var current_center = (chunk_min + chunk_max) * 0.5;
@@ -131,11 +128,32 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
 
     let mid = (entry + exit) * 0.5;
     let root_sub_voxel = get_first_child_intersect(t_min, entry, mid);
-    stack[0] = StackFrame(root_node_data, root_sub_voxel);
+    
+    //ful fusk stack
+    var f0_node: u32; var f0_sub: u32;
+    var f1_node: u32; var f1_sub: u32;
+    var f2_node: u32; var f2_sub: u32;
+    var f3_node: u32; var f3_sub: u32;
+    var f4_node: u32; var f4_sub: u32;
+
+    var sp: i32 = 0; 
+
+    f0_node = root_node_data;
+    f0_sub = root_sub_voxel;
 
     while (sp >= 0) {
-        let current_node = stack[sp].node_data;
-        let raw_sub = stack[sp].sub_voxel;
+        // Read current frame
+        var current_node: u32;
+        var raw_sub: u32;
+        
+        switch sp {
+            case 0: { current_node = f0_node; raw_sub = f0_sub; }
+            case 1: { current_node = f1_node; raw_sub = f1_sub; }
+            case 2: { current_node = f2_node; raw_sub = f2_sub; }
+            case 3: { current_node = f3_node; raw_sub = f3_sub; }
+            case 4: { current_node = f4_node; raw_sub = f4_sub; }
+            default: { break; }
+        }
         
         let visited = (raw_sub & 16u) != 0u;
         let actual_sub = raw_sub & 15u; 
@@ -144,8 +162,18 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
         if (actual_sub > 7u) {
             sp--; 
             if (sp >= 0) {
-                // Backtrack physical center using 15u mask
-                let parent_sub = stack[sp].sub_voxel & 15u;
+
+                var parent_sub: u32;
+                switch sp {
+                    case 0: { parent_sub = f0_sub; }
+                    case 1: { parent_sub = f1_sub; }
+                    case 2: { parent_sub = f2_sub; }
+                    case 3: { parent_sub = f3_sub; }
+                    case 4: { parent_sub = f4_sub; }
+                    default: { parent_sub = 0u; }
+                }
+                
+                parent_sub &= 15u;
                 current_center.x -= select(-current_half_size, current_half_size, (parent_sub & 1u) != 0u);
                 current_center.y -= select(-current_half_size, current_half_size, (parent_sub & 2u) != 0u);
                 current_center.z -= select(-current_half_size, current_half_size, (parent_sub & 4u) != 0u);
@@ -174,7 +202,15 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
                 return true;
             }
 
-            stack[sp].sub_voxel = actual_sub | 16u;
+            let visited_sub = actual_sub | 16u;
+            switch sp {
+                case 0: { f0_sub = visited_sub; }
+                case 1: { f1_sub = visited_sub; }
+                case 2: { f2_sub = visited_sub; }
+                case 3: { f3_sub = visited_sub; }
+                case 4: { f4_sub = visited_sub; }
+                default: {}
+            }
             
             current_half_size *= 0.5;
             current_center.x += select(-current_half_size, current_half_size, (actual_sub & 1u) != 0u);
@@ -190,7 +226,15 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
             let child_mid = (sub_entry + sub_exit) * 0.5;
 
             sp++;
-            stack[sp] = StackFrame(node_at_index, get_first_child_intersect(child_t_min, sub_entry, child_mid));
+            let new_sub = get_first_child_intersect(child_t_min, sub_entry, child_mid);
+            switch sp {
+                case 0: { f0_node = node_at_index; f0_sub = new_sub; }
+                case 1: { f1_node = node_at_index; f1_sub = new_sub; }
+                case 2: { f2_node = node_at_index; f2_sub = new_sub; }
+                case 3: { f3_node = node_at_index; f3_sub = new_sub; }
+                case 4: { f4_node = node_at_index; f4_sub = new_sub; }
+                default: {}
+            }
             continue;
         }
 
@@ -199,7 +243,16 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
             select(f_mid.y, f_exit.y, (actual_sub & 2u) != 0u),
             select(f_mid.z, f_exit.z, (actual_sub & 4u) != 0u)
         );
-        stack[sp].sub_voxel = get_next_sub_voxel(actual_sub, vec_exit_plane(node_exit));
+        let next_sub = get_next_sub_voxel(actual_sub, vec_exit_plane(node_exit));
+
+        switch sp {
+            case 0: { f0_sub = next_sub; }
+            case 1: { f1_sub = next_sub; }
+            case 2: { f2_sub = next_sub; }
+            case 3: { f3_sub = next_sub; }
+            case 4: { f4_sub = next_sub; }
+            default: {}
+        }
     }
     
     return false;
@@ -334,7 +387,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     var final_color = vec4<f32>(0.0, 0.0, 0.0, 1.0); // Svart bakgrund
     
-    //färg databas
+    //färg databas - will be a cpu buffer sent here later. 
     if (hit) {
         if (payload == 1u) { final_color = vec4<f32>(1.0, 0.0, 0.0, 1.0); }       // Röd
         else if (payload == 2u) { final_color = vec4<f32>(0.0, 1.0, 0.0, 1.0); }  // Grön
