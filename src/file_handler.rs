@@ -3,6 +3,9 @@ use std::path::Path;
 use serde::{Serialize, Deserialize};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
+use flate2::bufread::GzDecoder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 
 use crate::vecmath::*;
 use crate::octree::*;
@@ -43,9 +46,11 @@ fn save_file(filepath: &Path, data: &HashMap<V3i, Chunk>) -> Result<(), SaveAndL
     let file = File::create(filepath)?;
     let writer = BufWriter::new(file);
 
+    let compressor = GzEncoder::new(writer, Compression::default());
+
     let parsed_data = parse_chunks(data);
 
-    bincode::serialize_into(writer, &parsed_data)?;
+    bincode::serialize_into(compressor, &parsed_data)?;
     Ok(())
 }
 
@@ -88,7 +93,9 @@ fn load_file(filepath: &Path) -> Result<HashMap<V3i, Chunk>, SaveAndLoadError> {
     let file = File::open(filepath)?;
     let reader = BufReader::new(file);
 
-    let loaded_data: Vec<FormatedChunk> = bincode::deserialize_from(reader)?;
+    let decompressor = GzDecoder::new(reader);
+
+    let loaded_data: Vec<FormatedChunk> = bincode::deserialize_from(decompressor)?;
     let mut world_map: HashMap<V3i, Chunk> = HashMap::new();
 
     for entry in loaded_data {
