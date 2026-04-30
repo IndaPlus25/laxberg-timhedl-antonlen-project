@@ -84,6 +84,14 @@ impl Player {
         self.position.x += dx * step;
         self.position.z += dz * step;
     }
+
+    fn move_up(&mut self, step: f32) {
+        self.position.y += step;
+    }
+
+    fn move_down(&mut self, step: f32) {
+        self.position.y -= step;
+    }
 }
 
 impl State {
