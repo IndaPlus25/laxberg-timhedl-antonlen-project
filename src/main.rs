@@ -71,6 +71,21 @@ enum Direction {
     Right    
 }
 
+impl Player {
+    fn move_in_direction(&mut self, direction: Direction, step: f32) {
+        let quarter_rotation = std::f32::consts::FRAC_PI_2;
+        let (dx, dz) = match direction {
+            Direction::Forward => (self.direction.0.sin(), self.direction.0.cos()),
+            Direction::Back => (-self.direction.0.sin(), -self.direction.0.cos()),
+            Direction::Right => ((self.direction.0 + quarter_rotation).sin(), (self.direction.0 + quarter_rotation).cos()),
+            Direction::Left=> ((self.direction.0 - quarter_rotation).sin(), (self.direction.0 - quarter_rotation).cos()),
+        };
+
+        self.position.x += dx * step;
+        self.position.z += dz * step;
+    }
+}
+
 impl State {
     async fn new(display: OwnedDisplayHandle, window: Arc<Window>, gpu_world_data: &[u32]) -> State {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(
