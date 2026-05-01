@@ -494,11 +494,6 @@ impl ApplicationHandler for App {
                 // Emits a new redraw requested event.
                 state.get_window().request_redraw();
 
-                self.player.position.z += 0.001;
-                self.player.direction.0 += 0.00001;
-
-                self.lighting.sun_direction.z += 0.001;
-
                 //Fps counter:
                 self.frames_this_second += 1;
 
@@ -564,7 +559,7 @@ fn main() {
 
     let lighting = Lighting { 
         sun_direction: V3{x: -0.5, y: 0.8, z: 0.3},
-        ambient_strength: 0.25,
+        ambient_strength: 0.2,
         sky_color: [0.5, 0.7, 1.0, 1.0],
     };
 
