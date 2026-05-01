@@ -751,13 +751,14 @@ fn shading_pass(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let hit_info = hit_buffer[index];
 
     var final_color = lighting.sky_color; 
+
+    let shadow_dir = normalize(lighting.sun_direction);
     
     if (hit_info.did_hit == 1u) {
         let max_index = arrayLength(&colour_lut) - 1u; 
         var base_color = colour_lut[min(hit_info.payload, max_index)]; //fine
         
         let side_multiplier = get_face_multiplier(hit_info.hit_normal);
-        let shadow_dir = normalize(lighting.sun_direction); 
         let dot_light = dot(hit_info.hit_normal, shadow_dir);
         
         if (dot_light <= 0.0) {
@@ -776,6 +777,15 @@ fn shading_pass(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 final_color = base_color * side_multiplier; 
             }
         }
+    } else {
+
+            let x = f32(global_id.x);
+            let y = f32(global_id.y);
+            let ray_dir = normalize(camera.top_left + (camera.delta_x * x) + (camera.delta_y * y));
+
+            let sky_multiplier = dot(ray_dir, shadow_dir) * 0.5 + 0.5;
+            final_color = vec4<f32>(lighting.sky_color.rgb * sky_multiplier, lighting.sky_color.a);
+
     }
 
     textureStore(screen_texture, global_id.xy, final_color);
