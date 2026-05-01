@@ -10,10 +10,17 @@ struct Camera {
     delta_y: vec3<f32>,
 }
 
+struct HitData {
+    did_hit: u32,  // 1 if true, 0 if false
+    payload: u32,
+    // Future: Add hit_position and hit_normal here for lighting!
+}
+
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var screen_texture: texture_storage_2d<bgra8unorm, write>;
 @group(0) @binding(2) var<storage, read> world_data: array<u32>; 
 @group(0) @binding(3) var<storage, read> colour_lut: array<vec4<f32>>;
+@group(0) @binding(4) var<storage, read_write> hit_buffer: array<HitData>;
 
 // ==========================================
 // 2. HJÄLPFUNKTIONER (vecmath.rs)
@@ -102,6 +109,121 @@ fn get_next_sub_voxel(current: u32, exit_plane: u32) -> u32 {
     return (plane_data >> shift) & 0xFu;
 }
 
+//Optimised for LOW warp divergence (camera rays)
+fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<f32>, chunk_max: vec3<f32>, chunk_offset: u32, out_payload: ptr<function, u32>) -> bool {
+    var direction_mask: u32 = 0u;
+    var pos_ray_dir = ray_dir;
+    var pos_ray_origin = ray_origin;
+
+    if (pos_ray_dir.x < 0.0) { direction_mask |= 1u; pos_ray_dir.x = -pos_ray_dir.x; pos_ray_origin.x = chunk_max.x - (ray_origin.x - chunk_min.x); }
+    if (pos_ray_dir.y < 0.0) { direction_mask |= 2u; pos_ray_dir.y = -pos_ray_dir.y; pos_ray_origin.y = chunk_max.y - (ray_origin.y - chunk_min.y); }
+    if (pos_ray_dir.z < 0.0) { direction_mask |= 4u; pos_ray_dir.z = -pos_ray_dir.z; pos_ray_origin.z = chunk_max.z - (ray_origin.z - chunk_min.z); }
+
+    let safe_dir = max(pos_ray_dir, vec3<f32>(0.0000001));
+    let pos_inv_dir = vec3<f32>(1.0) / safe_dir;
+
+    let entry = (chunk_min - pos_ray_origin) * pos_inv_dir;
+    let exit = (chunk_max - pos_ray_origin) * pos_inv_dir;
+
+    let t_min = max(entry.x, max(entry.y, entry.z));
+    let t_max = min(exit.x, min(exit.y, exit.z));
+
+    if (t_min >= t_max || t_max < 0.0) { return false; }
+
+    var stack: array<StackFrame, 5>;
+    var sp: i32 = 0;
+
+    let root_node_data = world_data[chunk_offset];
+    
+    var current_center = (chunk_min + chunk_max) * 0.5;
+    var current_half_size = (chunk_max.x - chunk_min.x) * 0.5; 
+
+    let mid = (entry + exit) * 0.5;
+    let root_sub_voxel = get_first_child_intersect(t_min, entry, mid);
+
+    stack[0] = StackFrame(root_node_data, root_sub_voxel);
+    
+    while (sp >= 0) {
+        // Read current frame
+        var current_node = stack[sp].node_data;
+        var raw_sub = stack[sp].sub_voxel;
+        
+        let visited = (raw_sub & 16u) != 0u;
+        let actual_sub = raw_sub & 15u; 
+
+        // ASCEND
+        if (actual_sub > 7u) {
+            sp--; 
+            if (sp >= 0) {
+
+                let parent_sub = stack[sp].sub_voxel & 15u;
+
+                current_center.x -= select(-current_half_size, current_half_size, (parent_sub & 1u) != 0u);
+                current_center.y -= select(-current_half_size, current_half_size, (parent_sub & 2u) != 0u);
+                current_center.z -= select(-current_half_size, current_half_size, (parent_sub & 4u) != 0u);
+                current_half_size *= 2.0;
+            }
+            continue;
+        }
+
+        let voxel_min = current_center - vec3<f32>(current_half_size);
+        let voxel_max = current_center + vec3<f32>(current_half_size);
+        let f_entry = (voxel_min - pos_ray_origin) * pos_inv_dir;
+        let f_exit = (voxel_max - pos_ray_origin) * pos_inv_dir;
+        let f_mid = (f_entry + f_exit) * 0.5;
+
+        let true_sub_voxel = actual_sub ^ direction_mask;
+        let child_exists = has_child(current_node, true_sub_voxel);
+        
+        // DECEND
+        if (!visited && child_exists) {
+            let pointer = get_ending(current_node);
+            let child_index = pointer + child_pop_count(current_node, true_sub_voxel);
+            let node_at_index = world_data[chunk_offset + child_index];
+
+            if (is_leaf(current_node, true_sub_voxel)) {
+                *out_payload = get_ending(node_at_index);
+                return true;
+            }
+
+            stack[sp].sub_voxel = actual_sub | 16u;
+            
+            current_half_size *= 0.5;
+            current_center.x += select(-current_half_size, current_half_size, (actual_sub & 1u) != 0u);
+            current_center.y += select(-current_half_size, current_half_size, (actual_sub & 2u) != 0u);
+            current_center.z += select(-current_half_size, current_half_size, (actual_sub & 4u) != 0u);
+
+            let child_voxel_min = current_center - vec3<f32>(current_half_size);
+            let child_voxel_max = current_center + vec3<f32>(current_half_size);
+            let sub_entry = (child_voxel_min - pos_ray_origin) * pos_inv_dir;
+            let sub_exit = (child_voxel_max - pos_ray_origin) * pos_inv_dir;
+            
+            let child_t_min = max(sub_entry.x, max(sub_entry.y, sub_entry.z));
+            let child_mid = (sub_entry + sub_exit) * 0.5;
+
+            sp++;
+
+            stack[sp] = StackFrame(node_at_index, get_first_child_intersect(child_t_min, sub_entry, child_mid));
+
+            continue;
+        }
+
+        let node_exit = vec3<f32>(
+            select(f_mid.x, f_exit.x, (actual_sub & 1u) != 0u),
+            select(f_mid.y, f_exit.y, (actual_sub & 2u) != 0u),
+            select(f_mid.z, f_exit.z, (actual_sub & 4u) != 0u)
+        );
+
+        stack[sp].sub_voxel = get_next_sub_voxel(actual_sub, vec_exit_plane(node_exit));
+
+    }
+    
+    return false;
+}
+
+
+//Optimised for warp divergence so use something like this for shadow rays. 
+/*
 fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<f32>, chunk_max: vec3<f32>, chunk_offset: u32, out_payload: ptr<function, u32>) -> bool {
     var direction_mask: u32 = 0u;
     var pos_ray_dir = ray_dir;
@@ -258,6 +380,8 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
     
     return false;
 }
+*/
+
 
 // ==========================================
 // 5. MAKRO-TRAVERSERING (cast_ray octree.rs)
@@ -361,11 +485,15 @@ fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: pt
 }
 
 // ==========================================
-// 6. MAIN (raycaster renderer.rs)
+// 6. WAVEFRONT KERNELS (Split passes)
 // ==========================================
 
+// ------------------------------------------
+// Pass 1: Camera Rays
+// ------------------------------------------
+
 @compute @workgroup_size(8, 8, 1)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+fn ray_gen_pass(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let dimensions = textureDimensions(screen_texture);
 
     if (global_id.x >= dimensions.x || global_id.y >= dimensions.y) {
@@ -379,20 +507,39 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let render_radius = i32(camera.render_distance);
     let render_diameter = render_radius * 2;
-
     let ray_dda_limit = u32(render_diameter);
 
-    // Kasta strålen
     var payload: u32 = 0u;
     let hit = cast_ray(camera.position, ray_dir, ray_dda_limit, &payload, render_radius, render_diameter);
 
+    let index = global_id.y * dimensions.x + global_id.x;
+
+    hit_buffer[index] = HitData(u32(hit), payload);
+}
+
+// ------------------------------------------
+// Pass 2: Shading
+// ------------------------------------------
+
+@compute @workgroup_size(8, 8, 1)
+fn shading_pass(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    let dimensions = textureDimensions(screen_texture);
+    if (global_id.x >= dimensions.x || global_id.y >= dimensions.y) { return; }
+
+    let index = global_id.y * dimensions.x + global_id.x;
+    let hit_info = hit_buffer[index];
+
     var final_color = vec4<f32>(0.1, 0.1, 0.1, 1.0); // Svart bakgrund
     
-    //färg databas  
-    if (hit) {
+    if (hit_info.did_hit == 1u) {
         let max_index = arrayLength(&colour_lut) - 1u; 
-        final_color = colour_lut[min(payload, max_index)];
+        final_color = colour_lut[min(hit_info.payload, max_index)];
+        
+        // FUTURE: Here is where you will check the material and 
+        // push secondary rays to a `shadow_ray_queue` or `reflection_queue`
     }
 
     textureStore(screen_texture, global_id.xy, final_color);
 }
+
+

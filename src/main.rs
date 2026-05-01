@@ -65,9 +65,11 @@ struct State {
     surface: wgpu::Surface<'static>,
     surface_format: wgpu::TextureFormat,
 
-    compute_pipeline: wgpu::ComputePipeline,
     bind_group_layout: wgpu::BindGroupLayout,
-
+    ray_start_pipeline: wgpu::ComputePipeline,
+    shading_pipeline: wgpu::ComputePipeline,
+    
+    hit_buffer: wgpu::Buffer,
     player_buffer: wgpu::Buffer,
     world_buffer: wgpu::Buffer,
     color_buffer: wgpu::Buffer,
@@ -109,6 +111,15 @@ impl State {
             delta_y: [0.0, 0.0, 0.0],
             _padding4: 0,
         };
+
+        let pixel_count = (size.width * size.height) as wgpu::BufferAddress;
+
+        let hit_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Hit Buffer"),
+            size: pixel_count * 8,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         let player_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Player Uniform Buffer"),
@@ -172,7 +183,16 @@ impl State {
                     },
                     count: None,
                 },
-
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -189,11 +209,20 @@ impl State {
             immediate_size: 0,
         });
 
-        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Compute Pipeline"),
+        let ray_start_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Ray Gen Pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
-            entry_point: Some("main"),
+            entry_point: Some("ray_gen_pass"), // Matches WGSL function name
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        let shading_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Shading Pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: Some("shading_pass"),
             compilation_options: Default::default(),
             cache: None,
         });
@@ -206,7 +235,9 @@ impl State {
             size,
             surface,
             surface_format,
-            compute_pipeline,
+            hit_buffer,
+            ray_start_pipeline,
+            shading_pipeline,
             bind_group_layout,
             player_buffer,
             world_buffer,
@@ -236,8 +267,21 @@ impl State {
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        self.size = new_size;
-        self.configure_surface();
+        if new_size.width > 0 && new_size.height > 0 {
+            self.size = new_size;
+            self.configure_surface();
+
+            // 1. Calculate the new total number of pixels
+            let pixel_count = (new_size.width * new_size.height) as wgpu::BufferAddress;
+
+            // 3. Re-allocate the Hit Buffer (8 bytes per pixel)
+            self.hit_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Hit Buffer (Resized)"),
+                size: pixel_count * 8,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
     }
 
     fn render(&mut self, player: &Player, render_distance: u32, colours: &[[f32; 4]]) {
@@ -303,7 +347,10 @@ impl State {
                     binding: 3, // Färgdatabasen
                     resource: self.color_buffer.as_entire_binding(),
                 },
-                
+                wgpu::BindGroupEntry {
+                    binding: 4, // Träffdata 
+                    resource: self.hit_buffer.as_entire_binding(),
+                },
             ],
         });
 
@@ -316,13 +363,18 @@ impl State {
                 timestamp_writes: None,
             });
 
-            compute_pass.set_pipeline(&self.compute_pipeline);
             compute_pass.set_bind_group(0, &bind_group, &[]);
 
             // Beräkna 8x8 grupper över skärmens yta
             let workgroups_x = (self.size.width + 7) / 8;
             let workgroups_y = (self.size.height + 7) / 8;
             
+            // 1
+            compute_pass.set_pipeline(&self.ray_start_pipeline);
+            compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
+
+            // 2
+            compute_pass.set_pipeline(&self.shading_pipeline);
             compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
         } 
 
