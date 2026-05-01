@@ -38,9 +38,25 @@ pub struct PlayerUniform {
     pub _padding4: u32,
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct LightUniform {
+    pub sun_direction: [f32; 3],  
+    pub ambient_strength: f32,      
+    pub face_multipliers_1: [f32; 4], 
+    pub face_multipliers_2: [f32; 4], 
+    pub sky_color: [f32; 4],
+}
+
 pub struct Player {
     pub position: V3,
     pub direction: (f32, f32),
+}
+
+struct Lighting {
+    sun_direction: V3,
+    ambient_strength: f32,
+    sky_color: [f32; 4],
 }
 
 struct App {
@@ -50,6 +66,7 @@ struct App {
     player: Player,
     render_distance: u32,
     colours: Vec<[f32; 4]>,
+    lighting: Lighting,
 
     last_fps_update: Instant,
     frames_this_second: u32,
@@ -73,6 +90,7 @@ struct State {
     player_buffer: wgpu::Buffer,
     world_buffer: wgpu::Buffer,
     color_buffer: wgpu::Buffer,
+    light_buffer: wgpu::Buffer,
 }
 
 impl State {
@@ -95,6 +113,7 @@ impl State {
             .await
             .unwrap();
 
+
         let size = window.inner_size();
 
         let surface = instance.create_surface(window.clone()).unwrap();
@@ -112,11 +131,19 @@ impl State {
             _padding4: 0,
         };
 
+        let initial_light = LightUniform {
+            sun_direction: [0.0, 0.0, 0.0],
+            ambient_strength: 0.0,
+            face_multipliers_1: [0.0, 0.0, 0.0, 0.0], 
+            face_multipliers_2: [0.0, 0.0, 0.0, 0.0], 
+            sky_color: [0.0, 0.0, 0.0, 1.0],
+        };
+
         let pixel_count = (size.width * size.height) as wgpu::BufferAddress;
 
         let hit_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Hit Buffer"),
-            size: pixel_count * 8,
+            size: pixel_count * 8,  
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -124,6 +151,12 @@ impl State {
         let player_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Player Uniform Buffer"),
             contents: bytemuck::cast_slice(&[initial_player]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Light Uniform Buffer"),
+            contents: bytemuck::cast_slice(&[initial_light]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -193,6 +226,16 @@ impl State {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,  
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform, 
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },            
             ],
         });
 
@@ -213,7 +256,7 @@ impl State {
             label: Some("Ray Gen Pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
-            entry_point: Some("ray_gen_pass"), // Matches WGSL function name
+            entry_point: Some("ray_gen_pass"), 
             compilation_options: Default::default(),
             cache: None,
         });
@@ -242,6 +285,7 @@ impl State {
             player_buffer,
             world_buffer,
             color_buffer,
+            light_buffer,
         };
 
         state.configure_surface();
@@ -261,7 +305,7 @@ impl State {
             width: self.size.width,
             height: self.size.height,
             desired_maximum_frame_latency: 2,
-            present_mode: wgpu::PresentMode::AutoNoVsync,
+            present_mode: wgpu::PresentMode::AutoVsync,
         };
         self.surface.configure(&self.device, &surface_config);
     }
@@ -277,14 +321,14 @@ impl State {
             // 3. Re-allocate the Hit Buffer (8 bytes per pixel)
             self.hit_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Hit Buffer (Resized)"),
-                size: pixel_count * 8,
+                size: pixel_count * 32,
                 usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
         }
     }
 
-    fn render(&mut self, player: &Player, render_distance: u32, colours: &[[f32; 4]]) {
+    fn render(&mut self, player: &Player, render_distance: u32, colours: &[[f32; 4]], lighting: &Lighting) {
         let surface_texture = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(texture) => texture,
             wgpu::CurrentSurfaceTexture::Occluded | wgpu::CurrentSurfaceTexture::Timeout => return,
@@ -322,7 +366,29 @@ impl State {
                 delta_y: [result.2.x, result.2.y, result.2.z],
             _padding4: 0,
         };
-        // Skriv över datan i VRAM
+
+        let sun = lighting.sun_direction;
+        let sun_len = (sun.x * sun.x + sun.y * sun.y + sun.z * sun.z).sqrt();
+        let (dir_x, dir_y, dir_z) = if sun_len > 0.0 {
+            (sun.x / sun_len, sun.y / sun_len, sun.z / sun_len)
+        } else {
+            (0.0, 1.0, 0.0) // Fallback to avoid division by zero
+        };
+
+        let calc_lighting = |dot: f32| -> f32 {
+            lighting.ambient_strength + (1.0 - lighting.ambient_strength) * dot.max(0.0)
+        };
+
+        let light_uniform = LightUniform {
+            sun_direction: [lighting.sun_direction.x, lighting.sun_direction.y, lighting.sun_direction.z], // Direction TO the sun for shadow rays
+            ambient_strength: lighting.ambient_strength,
+            
+            face_multipliers_1: [calc_lighting(dir_x), calc_lighting(-dir_x), calc_lighting(dir_y), calc_lighting(-dir_y)], 
+            face_multipliers_2: [calc_lighting(dir_z), calc_lighting(-dir_z), 0.0, 0.0], 
+            sky_color: lighting.sky_color,
+        };
+        
+        self.queue.write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&[light_uniform]));
         self.queue.write_buffer(&self.player_buffer, 0, bytemuck::cast_slice(&[player_uniform]));
         self.queue.write_buffer(&self.color_buffer, 0, bytemuck::cast_slice(colours));
 
@@ -351,6 +417,10 @@ impl State {
                     binding: 4, // Träffdata 
                     resource: self.hit_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding:5, // Ljus
+                    resource: self.light_buffer.as_entire_binding(),
+                }
             ],
         });
 
@@ -420,9 +490,14 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                state.render(&self.player, self.render_distance, &self.colours);
+                state.render(&self.player, self.render_distance, &self.colours, &self.lighting);
                 // Emits a new redraw requested event.
                 state.get_window().request_redraw();
+
+                self.player.position.z += 0.001;
+                self.player.direction.0 += 0.00001;
+
+                self.lighting.sun_direction.z += 0.001;
 
                 //Fps counter:
                 self.frames_this_second += 1;
@@ -487,6 +562,12 @@ fn main() {
         [1.0, 1.0, 1.0, 1.0]    // 6: Vit
     ];
 
+    let lighting = Lighting { 
+        sun_direction: V3{x: -0.5, y: 0.8, z: 0.3},
+        ambient_strength: 0.25,
+        sky_color: [0.5, 0.7, 1.0, 1.0],
+    };
+
     let mut app = App {
         state: None,
         chunks, 
@@ -496,6 +577,7 @@ fn main() {
         current_acc_fps: 0.0,
         render_distance: 8,
         colours,
+        lighting,
     };
 
     println!("Launching Raycaster...");
