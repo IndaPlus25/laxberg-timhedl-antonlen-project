@@ -108,6 +108,8 @@ enum Direction {
 }
 
 impl Player {
+    const TWO_PI: f32 = std::f32::consts::PI * 2.0;
+    
     fn move_in_direction(&mut self, direction: Direction, step: f32) {
         let quarter_rotation = std::f32::consts::FRAC_PI_2;
         let (dx, dz) = match direction {
@@ -127,6 +129,17 @@ impl Player {
 
     fn move_down(&mut self, step: f32) {
         self.position.y -= step;
+    }
+
+    fn rotate_yaw(&mut self, angle: f32) { 
+        self.direction.0 += angle;
+
+        // Wrap the rotation to prevent it from getting too large
+        if self.direction.0 > Self::TWO_PI {
+            self.direction.0 -= Self::TWO_PI
+        } else if self.direction.0 < Self::TWO_PI {
+            self.direction.0 += Self::TWO_PI
+        }
     }
 }
 
