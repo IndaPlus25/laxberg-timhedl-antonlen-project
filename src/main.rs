@@ -146,7 +146,7 @@ impl Player {
         let new = self.direction.1 + angle;
 
         // Clamp pitch to max out at looking up or down
-        self.direction.1 = new.clamp(-std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2);
+        self.direction.1 = new.clamp(-std::f32::consts::FRAC_PI_2 + 0.01, std::f32::consts::FRAC_PI_2 - 0.01);
     }
 }
 
@@ -440,6 +440,42 @@ impl ApplicationHandler for App {
 
                     self.frames_this_second = 0;
                     self.last_fps_update = Instant::now();
+                }
+
+                // WASD movement
+                if self.key_presses.W {
+                    self.player.move_in_direction(Direction::Forward, 0.1);
+                }
+                if self.key_presses.A {
+                    self.player.move_in_direction(Direction::Left, 0.1);
+                }
+                if self.key_presses.S {
+                    self.player.move_in_direction(Direction::Back, 0.1);
+                }
+                if self.key_presses.D {
+                    self.player.move_in_direction(Direction::Right, 0.1);
+                }
+
+                // Up / Down
+                if self.key_presses.Space {
+                    self.player.move_up(0.1);
+                }
+                if self.key_presses.Ctrl {
+                    self.player.move_down(0.1);
+                }
+
+                let pi_2 = std::f32::consts::FRAC_PI_2;
+                if self.key_presses.Up {
+                    self.player.rotate_pitch(pi_2 * 0.01);
+                }
+                if self.key_presses.Down {
+                    self.player.rotate_pitch(-pi_2 * 0.01);
+                }
+                if self.key_presses.Left {
+                    self.player.rotate_yaw(-pi_2 * 0.01);
+                }
+                if self.key_presses.Right {
+                    self.player.rotate_yaw(pi_2 * 0.01);
                 }
             }
             WindowEvent::Resized(size) => {
