@@ -118,7 +118,38 @@ mod tests {
 
     #[test]
     fn same_input_and_output_test(){
+        let mut original_data = HashMap::new();
+        let pos = V3i { x: 0, y: 0, z: 0 };
+        let chunk = Chunk {
+            data: vec![0xFFFFFFFF, 0x00000000],
+            min_pos: V3 { x: 0.0, y: 0.0, z: 0.0 },
+            max_pos: V3 { x: 10.0, y: 10.0, z: 10.0 },
+        };
+        original_data.insert(pos, chunk);
 
+        let filepath = "test_file.bin";
+
+        save_file_interface(filepath, &original_data).expect("Failed to save data");
+
+        let loaded_data = load_file_interface(filepath).expect("Failed to load data");
+
+        let orig_chunk = original_data.get(&pos).unwrap();
+        let load_chunk = loaded_data.get(&pos).unwrap();
+
+        assert_eq!(original_data.len(), loaded_data.len());
+        assert_eq!(
+            (orig_chunk.min_pos.x, orig_chunk.min_pos.y, orig_chunk.min_pos.z),
+            (load_chunk.min_pos.x, load_chunk.min_pos.y, load_chunk.min_pos.z),
+            "min_pos did not match!"
+        );
+        assert_eq!(
+            (orig_chunk.max_pos.x, orig_chunk.max_pos.y, orig_chunk.max_pos.z),
+            (load_chunk.max_pos.x, load_chunk.max_pos.y, load_chunk.max_pos.z),
+            "max_pos did not match!"
+        );
+        assert_eq!(orig_chunk.data, load_chunk.data);
+
+        std::fs::remove_file(filepath).unwrap();
     }
 
     #[test]
