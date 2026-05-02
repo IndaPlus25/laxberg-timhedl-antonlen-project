@@ -129,7 +129,7 @@ mod tests {
         };
         original_data.insert(pos, chunk);
 
-        let filepath = "test_file.bin";
+        let filepath = "test_file1.bin";
 
         save_file_interface(filepath, &original_data).expect("Failed to save data");
 
@@ -158,7 +158,7 @@ mod tests {
     fn reject_invalid_file_type_save_test(){
         let original_data: HashMap<V3i, Chunk> = HashMap::new();
   
-        let filepath = "test_file.txt";
+        let filepath = "test_file2.txt";
 
         let path = Path::new(filepath);
         let extension = path.extension()
@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn reject_invalid_file_type_load_test(){  
-        let filepath = "test_file.txt";
+        let filepath = "test_file3.txt";
 
         let path = Path::new(filepath);
         let extension = path.extension()
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn handle_invalid_file_content_test(){
-        let filepath = "test_file.bin";
+        let filepath = "test_file4.bin";
 
         let file = File::create(filepath).expect("Could not create file");
         let writer = BufWriter::new(file);
@@ -232,7 +232,7 @@ mod tests {
     fn handle_invalid_file_savepath_test(){
         let original_data: HashMap<V3i, Chunk> = HashMap::new();
   
-        let filepath = "magic-folder/test_file.bin";
+        let filepath = "magic-folder/test_file5.bin";
 
         let save_result = save_file_interface(filepath, &original_data);
         let actual_err = save_result.unwrap_err();
