@@ -79,6 +79,7 @@ struct App {
 
     player: Player,
     key_presses: KeyPresses,
+    last_redraw: Instant,
 
     last_fps_update: Instant,
     frames_this_second: u32,
@@ -442,40 +443,44 @@ impl ApplicationHandler for App {
                     self.last_fps_update = Instant::now();
                 }
 
+                let delta_time = Instant::now().duration_since(self.last_redraw).as_secs_f32();
+                let move_speed = 10.0;
+                let rot_speed = std::f32::consts::FRAC_PI_2 * 1.5;
+                self.last_redraw = Instant::now();
+
                 // WASD movement
                 if self.key_presses.W {
-                    self.player.move_in_direction(Direction::Forward, 0.1);
+                    self.player.move_in_direction(Direction::Forward, move_speed * delta_time);
                 }
                 if self.key_presses.A {
-                    self.player.move_in_direction(Direction::Left, 0.1);
+                    self.player.move_in_direction(Direction::Left, move_speed * delta_time);
                 }
                 if self.key_presses.S {
-                    self.player.move_in_direction(Direction::Back, 0.1);
+                    self.player.move_in_direction(Direction::Back, move_speed * delta_time);
                 }
                 if self.key_presses.D {
-                    self.player.move_in_direction(Direction::Right, 0.1);
+                    self.player.move_in_direction(Direction::Right, move_speed * delta_time);
                 }
 
                 // Up / Down
                 if self.key_presses.Space {
-                    self.player.move_up(0.1);
+                    self.player.move_up(move_speed * delta_time);
                 }
                 if self.key_presses.Ctrl {
-                    self.player.move_down(0.1);
+                    self.player.move_down(move_speed * delta_time);
                 }
 
-                let pi_2 = std::f32::consts::FRAC_PI_2;
                 if self.key_presses.Up {
-                    self.player.rotate_pitch(pi_2 * 0.01);
+                    self.player.rotate_pitch(rot_speed * delta_time);
                 }
                 if self.key_presses.Down {
-                    self.player.rotate_pitch(-pi_2 * 0.01);
+                    self.player.rotate_pitch(-rot_speed * delta_time);
                 }
                 if self.key_presses.Left {
-                    self.player.rotate_yaw(-pi_2 * 0.01);
+                    self.player.rotate_yaw(-rot_speed * delta_time);
                 }
                 if self.key_presses.Right {
-                    self.player.rotate_yaw(pi_2 * 0.01);
+                    self.player.rotate_yaw(rot_speed * delta_time);
                 }
             }
             WindowEvent::Resized(size) => {
@@ -580,6 +585,7 @@ fn main() {
         frames_this_second: 0,
         player,
         key_presses: KeyPresses::new(),
+        last_redraw: Instant::now(),
     };
 
     println!("Launching Raycaster...");
