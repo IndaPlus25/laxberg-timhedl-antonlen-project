@@ -141,6 +141,13 @@ impl Player {
             self.direction.0 += Self::TWO_PI
         }
     }
+
+    fn rotate_pitch(&mut self, angle: f32) {
+        let new = self.direction.1 + angle;
+
+        // Clamp pitch to max out at looking up or down
+        self.direction.1 = new.clamp(-std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2);
+    }
 }
 
 impl State {
