@@ -201,7 +201,29 @@ mod tests {
 
     #[test]
     fn handle_invalid_file_content_test(){
-        
+        let filepath = "test_file.bin";
+
+        let file = File::create(filepath).expect("Could not create file");
+        let writer = BufWriter::new(file);
+        let compressor = GzEncoder::new(writer, Compression::default());
+
+        let data = vec![(218792, 289122), (32312, 3243242), (3543523, 7643623)];
+        bincode::serialize_into(compressor, &data).expect("Could not serialize");
+
+        let load_result = load_file_interface(filepath);
+        let actual_err = match load_result {
+            Ok(_) => panic!("Should not have loaded data"),
+            Err(error) => error,
+        };
+
+        assert!(
+            matches!(
+                actual_err, 
+                SaveAndLoadError::BincodeError(err) if matches!(*err, bincode::ErrorKind::Io(_))
+            )
+        );
+
+        std::fs::remove_file(filepath).unwrap();
     }
 
     #[test]
