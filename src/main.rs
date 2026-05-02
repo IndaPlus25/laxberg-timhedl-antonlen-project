@@ -8,8 +8,9 @@ mod octree;
 mod vecmath;
 mod builder;
 mod worldgen;
+mod renderer;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, f32::consts::FRAC_2_PI};
 use std::rc::Rc;
 use winit::{
     application::ApplicationHandler,
@@ -25,20 +26,40 @@ use crate::file_handler::save_file_interface;
 use crate::vecmath::*;
 use crate::octree::*;
 use crate::builder::*;
+use crate::renderer::*;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PlayerUniform {
     pub position: [f32; 3],
-    pub _padding: u32,
-    pub direction: [f32; 2],
-    pub fov: f32,
-    pub aspect_ratio: f32,
+    pub render_distance: u32,
+    pub top_left: [f32; 3],
+    pub _padding2: u32,
+    pub delta_x: [f32; 3],
+    pub _padding3: u32,
+    pub delta_y: [f32; 3],
+    pub _padding4: u32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct LightUniform {
+    pub sun_direction: [f32; 3],  
+    pub ambient_strength: f32,      
+    pub face_multipliers_1: [f32; 4], 
+    pub face_multipliers_2: [f32; 4], 
+    pub sky_color: [f32; 4],
 }
 
 pub struct Player {
     pub position: V3,
     pub direction: (f32, f32),
+}
+
+struct Lighting {
+    sun_direction: V3,
+    ambient_strength: f32,
+    sky_color: [f32; 4],
 }
 
 struct KeyPresses {
@@ -78,10 +99,14 @@ struct App {
     chunks: HashMap<V3i, Chunk>,
 
     player: Player,
+    render_distance: u32,
+    colours: Vec<[f32; 4]>,
+    lighting: Lighting,
     key_presses: KeyPresses,
 
     last_fps_update: Instant,
     frames_this_second: u32,
+    current_acc_fps: f32,
 }
 
 struct State {
@@ -93,11 +118,15 @@ struct State {
     surface: wgpu::Surface<'static>,
     surface_format: wgpu::TextureFormat,
 
-    compute_pipeline: wgpu::ComputePipeline,
     bind_group_layout: wgpu::BindGroupLayout,
-
+    ray_start_pipeline: wgpu::ComputePipeline,
+    shading_pipeline: wgpu::ComputePipeline,
+    
+    hit_buffer: wgpu::Buffer,
     player_buffer: wgpu::Buffer,
     world_buffer: wgpu::Buffer,
+    color_buffer: wgpu::Buffer,
+    light_buffer: wgpu::Buffer,
 }
 
 enum Direction {
@@ -151,7 +180,7 @@ impl Player {
 }
 
 impl State {
-    async fn new(display: OwnedDisplayHandle, window: Arc<Window>, gpu_world_data: &[u32]) -> State {
+    async fn new(display: OwnedDisplayHandle, window: Arc<Window>, gpu_world_data: &[u32], render_distance: u32) -> State {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(
             Box::new(display),
         ));
@@ -170,20 +199,40 @@ impl State {
             .await
             .unwrap();
 
+
         let size = window.inner_size();
 
         let surface = instance.create_surface(window.clone()).unwrap();
 
         let surface_format = wgpu::TextureFormat::Bgra8Unorm;
 
-        // 1. SKAPA PLAYER BUFFER (Uniform)
         let initial_player = PlayerUniform {
             position: [0.0, 0.0, 0.0],
-            _padding: 0,
-            direction: [0.0, 0.0],
-            fov: 90.0_f32.to_radians(),
-            aspect_ratio: size.width as f32 / size.height as f32,
+            render_distance,
+            top_left: [0.0, 0.0, 0.0],
+            _padding2: 0,
+            delta_x: [0.0, 0.0, 0.0],
+            _padding3: 0,
+            delta_y: [0.0, 0.0, 0.0],
+            _padding4: 0,
         };
+
+        let initial_light = LightUniform {
+            sun_direction: [0.0, 0.0, 0.0],
+            ambient_strength: 0.0,
+            face_multipliers_1: [0.0, 0.0, 0.0, 0.0], 
+            face_multipliers_2: [0.0, 0.0, 0.0, 0.0], 
+            sky_color: [0.0, 0.0, 0.0, 1.0],
+        };
+
+        let pixel_count = (size.width * size.height) as wgpu::BufferAddress;
+
+        let hit_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Hit Buffer"),
+            size: pixel_count * 8,  
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         let player_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Player Uniform Buffer"),
@@ -191,31 +240,39 @@ impl State {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        // 2. SKAPA WORLD BUFFER (Storage)
+        let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Light Uniform Buffer"),
+            contents: bytemuck::cast_slice(&[initial_light]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
         let world_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("World Storage Buffer"),
             contents: bytemuck::cast_slice(gpu_world_data),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
 
-        // 3. SKAPA BIND GROUP LAYOUT (Bron)
+        let color_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Color LUT Buffer"),
+            size: (256 * std::mem::size_of::<[f32; 4]>()) as wgpu::BufferAddress, 
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Main Bind Group Layout"),
             entries: &[
-                // Binding 0: Kamera (Uniform Buffer)
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
-                        // VIKTIGT: Nu är det en Uniform!
                         ty: wgpu::BufferBindingType::Uniform, 
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
                     count: None,
                 },
-                // Binding 1: Skärmen (Storage Texture)
-            wgpu::BindGroupLayoutEntry {
+                wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
@@ -225,18 +282,46 @@ impl State {
                     },
                     count: None,
                 },
-                // Binding 2: Världsdatan / Chunks (Storage Buffer, Read Only)
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
-                        // VIKTIGT: SVO-datan är gigantisk, så det måste vara Storage
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,  
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform, 
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },            
             ],
         });
 
@@ -253,11 +338,20 @@ impl State {
             immediate_size: 0,
         });
 
-        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Compute Pipeline"),
+        let ray_start_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Ray Gen Pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
-            entry_point: Some("main"),
+            entry_point: Some("ray_gen_pass"), 
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        let shading_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Shading Pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: Some("shading_pass"),
             compilation_options: Default::default(),
             cache: None,
         });
@@ -270,10 +364,14 @@ impl State {
             size,
             surface,
             surface_format,
-            compute_pipeline,
+            hit_buffer,
+            ray_start_pipeline,
+            shading_pipeline,
             bind_group_layout,
             player_buffer,
             world_buffer,
+            color_buffer,
+            light_buffer,
         };
 
         state.configure_surface();
@@ -299,16 +397,24 @@ impl State {
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        self.size = new_size;
+        if new_size.width > 0 && new_size.height > 0 {
+            self.size = new_size;
+            self.configure_surface();
 
-        // reconfigure the surface
-        self.configure_surface();
+            // 1. Calculate the new total number of pixels
+            let pixel_count = (new_size.width * new_size.height) as wgpu::BufferAddress;
+
+            // 3. Re-allocate the Hit Buffer (8 bytes per pixel)
+            self.hit_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Hit Buffer (Resized)"),
+                size: pixel_count * 32,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
     }
 
-    fn render(&mut self, player: &Player) {
-        // Create texture view.
-        // NOTE: We must handle Timeout because the surface may be unavailable
-        // (e.g., when the window is occluded on macOS).
+    fn render(&mut self, player: &Player, render_distance: u32, colours: &[[f32; 4]], lighting: &Lighting) {
         let surface_texture = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(texture) => texture,
             wgpu::CurrentSurfaceTexture::Occluded | wgpu::CurrentSurfaceTexture::Timeout => return,
@@ -333,16 +439,44 @@ impl State {
 
         let texture_view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let aspect_ratio = self.size.width as f32 / self.size.height as f32;
+        let fov = std::f32::consts::PI / 2.0;
+        let result: (V3, V3, V3) = render_starter(self.size.width, self.size.height, fov, player.direction);
+
         let player_uniform = PlayerUniform {
             position: [player.position.x, player.position.y, player.position.z],
-            _padding: 0,
-            direction: [player.direction.0, player.direction.1], // yaw och pitch
-            fov: 90.0_f32.to_radians(), // Du kan göra FOV dynamisk senare!
-            aspect_ratio,
+            render_distance,
+            top_left: [result.0.x, result.0.y, result.0.z],
+            _padding2: 0,
+            delta_x: [result.1.x, result.1.y, result.1.z],
+            _padding3: 0,
+                delta_y: [result.2.x, result.2.y, result.2.z],
+            _padding4: 0,
         };
-        // Skriv över datan i VRAM
+
+        let sun = lighting.sun_direction;
+        let sun_len = (sun.x * sun.x + sun.y * sun.y + sun.z * sun.z).sqrt();
+        let (dir_x, dir_y, dir_z) = if sun_len > 0.0 {
+            (sun.x / sun_len, sun.y / sun_len, sun.z / sun_len)
+        } else {
+            (0.0, 1.0, 0.0) // Fallback to avoid division by zero
+        };
+
+        let calc_lighting = |dot: f32| -> f32 {
+            lighting.ambient_strength + (1.0 - lighting.ambient_strength) * dot.max(0.0)
+        };
+
+        let light_uniform = LightUniform {
+            sun_direction: [lighting.sun_direction.x, lighting.sun_direction.y, lighting.sun_direction.z], // Direction TO the sun for shadow rays
+            ambient_strength: lighting.ambient_strength,
+            
+            face_multipliers_1: [calc_lighting(dir_x), calc_lighting(-dir_x), calc_lighting(dir_y), calc_lighting(-dir_y)], 
+            face_multipliers_2: [calc_lighting(dir_z), calc_lighting(-dir_z), 0.0, 0.0], 
+            sky_color: lighting.sky_color,
+        };
+        
+        self.queue.write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&[light_uniform]));
         self.queue.write_buffer(&self.player_buffer, 0, bytemuck::cast_slice(&[player_uniform]));
+        self.queue.write_buffer(&self.color_buffer, 0, bytemuck::cast_slice(colours));
 
         // --- BYGG BRON (Med alla 3 bindings) ---
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -358,9 +492,21 @@ impl State {
                     resource: wgpu::BindingResource::TextureView(&texture_view),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 2, // SVO Chunks (Just nu vår dummy_world_data)
+                    binding: 2, // SVO Chunks  
                     resource: self.world_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 3, // Färgdatabasen
+                    resource: self.color_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4, // Träffdata 
+                    resource: self.hit_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding:5, // Ljus
+                    resource: self.light_buffer.as_entire_binding(),
+                }
             ],
         });
 
@@ -373,21 +519,25 @@ impl State {
                 timestamp_writes: None,
             });
 
-            compute_pass.set_pipeline(&self.compute_pipeline);
             compute_pass.set_bind_group(0, &bind_group, &[]);
 
             // Beräkna 8x8 grupper över skärmens yta
             let workgroups_x = (self.size.width + 7) / 8;
             let workgroups_y = (self.size.height + 7) / 8;
             
+            // 1
+            compute_pass.set_pipeline(&self.ray_start_pipeline);
             compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
-        } // Compute pass droppas här
+
+            // 2
+            compute_pass.set_pipeline(&self.shading_pipeline);
+            compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
+        } 
 
         // SUBMIT OCH PRESENT
         self.queue.submit([encoder.finish()]);
         self.window.pre_present_notify();
-        surface_texture.present(); // Fixad!
-    }
+        surface_texture.present();     }
 }
 
 
@@ -404,12 +554,13 @@ impl ApplicationHandler for App {
                 .unwrap(),
         );
 
-        let packed_world = pack_world_to_gpu(&self.chunks);
+        let packed_world = pack_world_to_gpu(&self.chunks, self.render_distance);
 
         let state = pollster::block_on(State::new(
             event_loop.owned_display_handle(),
             window.clone(),
             &packed_world,
+            self.render_distance,
         ));
         self.state = Some(state);
         
@@ -425,7 +576,7 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                state.render(&self.player);
+                state.render(&self.player, self.render_distance, &self.colours, &self.lighting);
                 // Emits a new redraw requested event.
                 state.get_window().request_redraw();
 
@@ -446,6 +597,11 @@ impl ApplicationHandler for App {
                 // Reconfigures the size of the surface. We do not re-render
                 // here as this event is always followed up by redraw request.
                 state.resize(size);
+
+                //Fps reset:
+                self.last_fps_update = Instant::now();
+                self.frames_this_second = 0;
+                self.current_acc_fps = 0.0;
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 // Ignore if repeated key press
@@ -536,13 +692,33 @@ fn main() {
         // direction: (0.0, -std::f32::consts::FRAC_PI_2)               
         direction: (std::f32::consts::FRAC_PI_3, 0.0)               
     };
-    
+
+    let colours: Vec<[f32; 4]> = vec![
+        [1.0, 1.0, 1.0, 1.0],   // 0: Vit också :)
+        [1.0, 0.0, 0.0, 1.0],   // 1: Röd
+        [0.0, 1.0, 0.0, 1.0],   // 2: Grön
+        [0.0, 0.0, 1.0, 1.0],   // 3: Blå
+        [1.0, 0.58, 0.0, 1.0],  // 4: Orange
+        [1.0, 0.83, 0.03, 1.0], // 5: Gul
+        [1.0, 1.0, 1.0, 1.0]    // 6: Vit
+    ];
+
+    let lighting = Lighting { 
+        sun_direction: V3{x: -0.5, y: 0.8, z: 0.3},
+        ambient_strength: 0.2,
+        sky_color: [0.5, 0.7, 1.0, 1.0],
+    };
+
     let mut app = App {
         state: None,
         chunks, 
         last_fps_update: Instant::now(),
         frames_this_second: 0,
         player,
+        current_acc_fps: 0.0,
+        render_distance: 8,
+        colours,
+        lighting,
         key_presses: KeyPresses::new(),
     };
 
