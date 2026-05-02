@@ -1,6 +1,8 @@
 mod file_parser;
 mod voxelizer;
+
 mod error;
+mod file_handler;
 
 mod octree;
 mod vecmath;
@@ -19,6 +21,7 @@ use std::time::Instant;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
+use crate::file_handler::save_file_interface;
 use crate::vecmath::*;
 use crate::octree::*;
 use crate::builder::*;
@@ -467,7 +470,7 @@ fn main() {
     event_loop.set_control_flow(ControlFlow::Poll);
     
     let mesh = file_parser::file_parse_interface("Susan.obj").unwrap().clone();
-    let world_data = voxelizer::voxel_grid_from_triangles(mesh, 50);
+    let world_data = voxelizer::voxel_grid_from_triangles(mesh, 100);
 
     println!("Compressing world into Sparse Voxel Octrees...");
     let chunks = to_chunks(&world_data);
