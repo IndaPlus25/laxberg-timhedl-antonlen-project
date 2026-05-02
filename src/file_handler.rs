@@ -153,7 +153,7 @@ mod tests {
     }
 
     #[test]
-    fn reject_invalid_file_type_test(){
+    fn reject_invalid_file_type_save_test(){
         let original_data: HashMap<V3i, Chunk> = HashMap::new();
   
         let filepath = "test_file.txt";
@@ -173,6 +173,11 @@ mod tests {
             ),
             "Expected NotSupportedFileFormat with 'txt', got something else!"
         );
+    }
+
+    #[test]
+    fn reject_invalid_file_type_load_test(){
+
     }
 
     #[test]
