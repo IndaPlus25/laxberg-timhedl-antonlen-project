@@ -154,7 +154,25 @@ mod tests {
 
     #[test]
     fn reject_invalid_file_type_test(){
-        
+        let original_data: HashMap<V3i, Chunk> = HashMap::new();
+  
+        let filepath = "test_file.txt";
+
+        let path = Path::new(filepath);
+        let extension = path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext|ext.to_lowercase());
+
+        let save_result = save_file_interface(filepath, &original_data);
+        let actual_err = save_result.unwrap_err();
+
+        assert!(
+            matches!(
+                actual_err, 
+                SaveAndLoadError::NotSupportedFileFormat(ext) if ext == extension
+            ),
+            "Expected NotSupportedFileFormat with 'txt', got something else!"
+        );
     }
 
     #[test]
