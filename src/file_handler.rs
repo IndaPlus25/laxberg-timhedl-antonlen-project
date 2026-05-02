@@ -114,6 +114,8 @@ fn load_file(filepath: &Path) -> Result<HashMap<V3i, Chunk>, SaveAndLoadError> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::ErrorKind;
+
     use super::*;
 
     #[test]
@@ -228,6 +230,18 @@ mod tests {
 
     #[test]
     fn handle_invalid_file_savepath_test(){
-        
+        let original_data: HashMap<V3i, Chunk> = HashMap::new();
+  
+        let filepath = "magic-folder/test_file.bin";
+
+        let save_result = save_file_interface(filepath, &original_data);
+        let actual_err = save_result.unwrap_err();
+
+        assert!(
+            matches!(
+                actual_err, 
+                SaveAndLoadError::IoError(err) if err.kind() == ErrorKind::NotFound
+            )
+        );
     }
 }
