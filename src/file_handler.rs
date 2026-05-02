@@ -111,3 +111,28 @@ fn load_file(filepath: &Path) -> Result<HashMap<V3i, Chunk>, SaveAndLoadError> {
     Ok(world_map)
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn same_input_and_output_test(){
+
+    }
+
+    #[test]
+    fn reject_invalid_file_type_test(){
+        
+    }
+
+    #[test]
+    fn handle_invalid_file_content_test(){
+        
+    }
+
+    #[test]
+    fn handle_invalid_file_savepath_test(){
+        
+    }
+}
