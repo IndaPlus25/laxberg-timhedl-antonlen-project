@@ -176,8 +176,27 @@ mod tests {
     }
 
     #[test]
-    fn reject_invalid_file_type_load_test(){
+    fn reject_invalid_file_type_load_test(){  
+        let filepath = "test_file.txt";
 
+        let path = Path::new(filepath);
+        let extension = path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext|ext.to_lowercase());
+
+        let save_result = load_file_interface(filepath);
+        let actual_err = match save_result {
+            Ok(_) => panic!("Should not have loaded data"),
+            Err(error) => error,
+        };
+
+        assert!(
+            matches!(
+                actual_err, 
+                SaveAndLoadError::NotSupportedFileFormat(ext) if ext == extension
+            ),
+            "Expected NotSupportedFileFormat with 'txt', got something else!"
+        );
     }
 
     #[test]
