@@ -1,4 +1,5 @@
 use std::fmt;
+use bincode::Error;
 
 #[derive(Debug)]
 pub enum FileParseError{
@@ -30,6 +31,43 @@ impl fmt::Display for FileParseError {
             FileParseError::IoError(error) => write!(f, "Failed due to Io Error '{}'", error),
             
             FileParseError::NotSupportedFileFormat(option) => {
+                if let Some(format) = option {
+                    write!(f, "Could not parse file, the '{}' format is not supported yet", format)
+                } else {
+                    write!(f, "The input you selected is not a file and could not be parsed")
+                }
+            },
+        }
+    }
+}
+
+
+#[derive(Debug)]
+pub enum SaveAndLoadError{
+    IoError(std::io::Error),
+    NotSupportedFileFormat(Option<String>),
+    BincodeError(bincode::Error),
+}
+
+impl From<std::io::Error> for SaveAndLoadError {
+    fn from(err: std::io::Error) -> Self {
+        SaveAndLoadError::IoError(err)
+    }
+}
+
+impl From<bincode::Error> for SaveAndLoadError {
+    fn from(err: bincode::Error) -> Self {
+        SaveAndLoadError::BincodeError(err)
+    }
+}
+
+impl fmt::Display for SaveAndLoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SaveAndLoadError::IoError(error) => write!(f, "Failed due to Io Error '{}'", error),
+            SaveAndLoadError::BincodeError(error) => write!(f, "Failed due to Bincode Error '{}'", error),
+            
+            SaveAndLoadError::NotSupportedFileFormat(option) => {
                 if let Some(format) = option {
                     write!(f, "Could not parse file, the '{}' format is not supported yet", format)
                 } else {

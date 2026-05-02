@@ -1,6 +1,8 @@
 mod file_parser;
 mod voxelizer;
+
 mod error;
+mod file_handler;
 
 mod octree;
 mod vecmath;
@@ -20,6 +22,7 @@ use std::time::Instant;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
+use crate::file_handler::save_file_interface;
 use crate::vecmath::*;
 use crate::octree::*;
 use crate::builder::*;
@@ -59,6 +62,38 @@ struct Lighting {
     sky_color: [f32; 4],
 }
 
+struct KeyPresses {
+    W: bool,
+    A: bool,
+    S: bool,
+    D: bool,
+    Shift: bool,
+    Space: bool,
+    Ctrl: bool,
+    Up: bool,
+    Left: bool,
+    Down: bool,
+    Right: bool
+}
+
+impl KeyPresses {
+    fn new() -> Self {
+        Self {
+            W: false,
+            A: false,
+            S: false,
+            D: false,
+            Shift: false,
+            Space: false,
+            Ctrl: false,
+            Up: false,
+            Left: false,
+            Down: false,
+            Right: false
+        }
+    }
+}
+
 struct App {
     state: Option<State>,
     chunks: HashMap<V3i, Chunk>,
@@ -67,6 +102,7 @@ struct App {
     render_distance: u32,
     colours: Vec<[f32; 4]>,
     lighting: Lighting,
+    key_presses: KeyPresses,
 
     last_fps_update: Instant,
     frames_this_second: u32,
@@ -91,6 +127,36 @@ struct State {
     world_buffer: wgpu::Buffer,
     color_buffer: wgpu::Buffer,
     light_buffer: wgpu::Buffer,
+}
+
+enum Direction {
+    Forward,
+    Back,
+    Left,
+    Right    
+}
+
+impl Player {
+    fn move_in_direction(&mut self, direction: Direction, step: f32) {
+        let quarter_rotation = std::f32::consts::FRAC_PI_2;
+        let (dx, dz) = match direction {
+            Direction::Forward => (self.direction.0.sin(), self.direction.0.cos()),
+            Direction::Back => (-self.direction.0.sin(), -self.direction.0.cos()),
+            Direction::Right => ((self.direction.0 + quarter_rotation).sin(), (self.direction.0 + quarter_rotation).cos()),
+            Direction::Left=> ((self.direction.0 - quarter_rotation).sin(), (self.direction.0 - quarter_rotation).cos()),
+        };
+
+        self.position.x += dx * step;
+        self.position.z += dz * step;
+    }
+
+    fn move_up(&mut self, step: f32) {
+        self.position.y += step;
+    }
+
+    fn move_down(&mut self, step: f32) {
+        self.position.y -= step;
+    }
 }
 
 impl State {
@@ -517,6 +583,66 @@ impl ApplicationHandler for App {
                 self.frames_this_second = 0;
                 self.current_acc_fps = 0.0;
             }
+            WindowEvent::KeyboardInput { event, .. } => {
+                // Ignore if repeated key press
+                if event.repeat {
+                    return;
+                }
+
+                // Get key code and state from press/release
+                let key_code = match event.physical_key {
+                    winit::keyboard::PhysicalKey::Code(key_code) => key_code,
+                    winit::keyboard::PhysicalKey::Unidentified(_) => return,
+                };
+                let state = match event.state {
+                    winit::event::ElementState::Pressed => true,
+                    winit::event::ElementState::Released => false,
+                };
+                
+                match key_code {
+                    // WASD
+                    winit::keyboard::KeyCode::KeyW => {
+                        self.key_presses.W = state;
+                    }
+                    winit::keyboard::KeyCode::KeyA => {
+                        self.key_presses.A = state;
+                    }
+                    winit::keyboard::KeyCode::KeyS => {
+                        self.key_presses.S = state;
+                    }
+                    winit::keyboard::KeyCode::KeyD => {
+                        self.key_presses.D = state;
+                    }
+
+                    // Space
+                    winit::keyboard::KeyCode::Space => {
+                        self.key_presses.Space = state;
+                    }
+                    
+                    // Modifiers
+                    winit::keyboard::KeyCode::ShiftLeft => {
+                        self.key_presses.Shift = state;
+                    }
+                    winit::keyboard::KeyCode::ControlLeft => {
+                        self.key_presses.Ctrl = state;
+                    }
+
+                    // Arrow keys
+                    winit::keyboard::KeyCode::ArrowUp => {
+                        self.key_presses.Up = state;
+                    }
+                    winit::keyboard::KeyCode::ArrowLeft => {
+                        self.key_presses.Left = state;
+                    }
+                    winit::keyboard::KeyCode::ArrowDown => {
+                        self.key_presses.Down = state;
+                    }
+                    winit::keyboard::KeyCode::ArrowRight => {
+                        self.key_presses.Right = state;
+                    }
+                    _ => {}
+                }
+            }
             _ => (),
         }
     }
@@ -530,7 +656,7 @@ fn main() {
     event_loop.set_control_flow(ControlFlow::Poll);
     
     let mesh = file_parser::file_parse_interface("Susan.obj").unwrap().clone();
-    let world_data = voxelizer::voxel_grid_from_triangles(mesh, 50);
+    let world_data = voxelizer::voxel_grid_from_triangles(mesh, 100);
 
     println!("Compressing world into Sparse Voxel Octrees...");
     let chunks = to_chunks(&world_data);
@@ -573,6 +699,7 @@ fn main() {
         render_distance: 8,
         colours,
         lighting,
+        key_presses: KeyPresses::new(),
     };
 
     println!("Launching Raycaster...");
