@@ -103,6 +103,7 @@ struct App {
     colours: Vec<[f32; 4]>,
     lighting: Lighting,
     key_presses: KeyPresses,
+    last_redraw: Instant,
 
     last_fps_update: Instant,
     frames_this_second: u32,
@@ -175,7 +176,7 @@ impl Player {
         let new = self.direction.1 + angle;
 
         // Clamp pitch to max out at looking up or down
-        self.direction.1 = new.clamp(-std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2);
+        self.direction.1 = new.clamp(-std::f32::consts::FRAC_PI_2 + 0.01, std::f32::consts::FRAC_PI_2 - 0.01);
     }
 }
 
@@ -592,6 +593,46 @@ impl ApplicationHandler for App {
                     self.frames_this_second = 0;
                     self.last_fps_update = Instant::now();
                 }
+
+                let delta_time = Instant::now().duration_since(self.last_redraw).as_secs_f32();
+                let move_speed = 10.0;
+                let rot_speed = std::f32::consts::FRAC_PI_2 * 1.5;
+                self.last_redraw = Instant::now();
+
+                // WASD movement
+                if self.key_presses.W {
+                    self.player.move_in_direction(Direction::Forward, move_speed * delta_time);
+                }
+                if self.key_presses.A {
+                    self.player.move_in_direction(Direction::Left, move_speed * delta_time);
+                }
+                if self.key_presses.S {
+                    self.player.move_in_direction(Direction::Back, move_speed * delta_time);
+                }
+                if self.key_presses.D {
+                    self.player.move_in_direction(Direction::Right, move_speed * delta_time);
+                }
+
+                // Up / Down
+                if self.key_presses.Space {
+                    self.player.move_up(move_speed * delta_time);
+                }
+                if self.key_presses.Ctrl {
+                    self.player.move_down(move_speed * delta_time);
+                }
+
+                if self.key_presses.Up {
+                    self.player.rotate_pitch(rot_speed * delta_time);
+                }
+                if self.key_presses.Down {
+                    self.player.rotate_pitch(-rot_speed * delta_time);
+                }
+                if self.key_presses.Left {
+                    self.player.rotate_yaw(-rot_speed * delta_time);
+                }
+                if self.key_presses.Right {
+                    self.player.rotate_yaw(rot_speed * delta_time);
+                }
             }
             WindowEvent::Resized(size) => {
                 // Reconfigures the size of the surface. We do not re-render
@@ -720,6 +761,7 @@ fn main() {
         colours,
         lighting,
         key_presses: KeyPresses::new(),
+        last_redraw: Instant::now(),
     };
 
     println!("Launching Raycaster...");
