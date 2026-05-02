@@ -38,11 +38,44 @@ pub struct Player {
     pub direction: (f32, f32),
 }
 
+struct KeyPresses {
+    W: bool,
+    A: bool,
+    S: bool,
+    D: bool,
+    Shift: bool,
+    Space: bool,
+    Ctrl: bool,
+    Up: bool,
+    Left: bool,
+    Down: bool,
+    Right: bool
+}
+
+impl KeyPresses {
+    fn new() -> Self {
+        Self {
+            W: false,
+            A: false,
+            S: false,
+            D: false,
+            Shift: false,
+            Space: false,
+            Ctrl: false,
+            Up: false,
+            Left: false,
+            Down: false,
+            Right: false
+        }
+    }
+}
+
 struct App {
     state: Option<State>,
     chunks: HashMap<V3i, Chunk>,
 
     player: Player,
+    key_presses: KeyPresses,
 
     last_fps_update: Instant,
     frames_this_second: u32,
@@ -361,6 +394,66 @@ impl ApplicationHandler for App {
                 // here as this event is always followed up by redraw request.
                 state.resize(size);
             }
+            WindowEvent::KeyboardInput { event, .. } => {
+                // Ignore if repeated key press
+                if event.repeat {
+                    return;
+                }
+
+                // Get key code and state from press/release
+                let key_code = match event.physical_key {
+                    winit::keyboard::PhysicalKey::Code(key_code) => key_code,
+                    winit::keyboard::PhysicalKey::Unidentified(_) => return,
+                };
+                let state = match event.state {
+                    winit::event::ElementState::Pressed => true,
+                    winit::event::ElementState::Released => false,
+                };
+                
+                match key_code {
+                    // WASD
+                    winit::keyboard::KeyCode::KeyW => {
+                        self.key_presses.W = state;
+                    }
+                    winit::keyboard::KeyCode::KeyA => {
+                        self.key_presses.A = state;
+                    }
+                    winit::keyboard::KeyCode::KeyS => {
+                        self.key_presses.S = state;
+                    }
+                    winit::keyboard::KeyCode::KeyD => {
+                        self.key_presses.D = state;
+                    }
+
+                    // Space
+                    winit::keyboard::KeyCode::Space => {
+                        self.key_presses.Space = state;
+                    }
+                    
+                    // Modifiers
+                    winit::keyboard::KeyCode::ShiftLeft => {
+                        self.key_presses.Shift = state;
+                    }
+                    winit::keyboard::KeyCode::ControlLeft => {
+                        self.key_presses.Ctrl = state;
+                    }
+
+                    // Arrow keys
+                    winit::keyboard::KeyCode::ArrowUp => {
+                        self.key_presses.Up = state;
+                    }
+                    winit::keyboard::KeyCode::ArrowLeft => {
+                        self.key_presses.Left = state;
+                    }
+                    winit::keyboard::KeyCode::ArrowDown => {
+                        self.key_presses.Down = state;
+                    }
+                    winit::keyboard::KeyCode::ArrowRight => {
+                        self.key_presses.Right = state;
+                    }
+                    _ => {}
+                }
+            }
             _ => (),
         }
     }
@@ -397,6 +490,7 @@ fn main() {
         last_fps_update: Instant::now(),
         frames_this_second: 0,
         player,
+        key_presses: KeyPresses::new(),
     };
 
     println!("Launching Raycaster...");
