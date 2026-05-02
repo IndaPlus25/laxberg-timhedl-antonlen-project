@@ -36,7 +36,7 @@ pub fn save_file_interface(filepath: &str, data: &HashMap<V3i, Chunk>) -> Result
     
     match extension.as_deref() {
         Some("bin") => {},
-        _ => {SaveAndLoadError::NotSupportedFileFormat(extension);},
+        _ => {return Err(SaveAndLoadError::NotSupportedFileFormat(extension));},
     }
     
     save_file(path, &data)
@@ -81,7 +81,7 @@ pub fn load_file_interface(filepath: &str) -> Result<HashMap<V3i, Chunk>, SaveAn
     
     match extension.as_deref() {
         Some("bin") => {},
-        _ => {SaveAndLoadError::NotSupportedFileFormat(extension);},
+        _ => {return Err(SaveAndLoadError::NotSupportedFileFormat(extension));},
     }
     
     let data = load_file(path)?;
