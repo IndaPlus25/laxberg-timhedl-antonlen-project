@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Error, ErrorKind};
 use std::path::{Path};
 
-use bincode::de::read;
+const DEFAULT_COLOR: Vertex = Vertex {x: 1.0, y: 1.0, z: 1.0};
 
 use crate::error::{FileParseError};
 
@@ -19,13 +19,14 @@ pub struct Face {
     pub v1: usize,
     pub v2: usize,
     pub v3: usize,
-    pub color: Vertex
+    pub color_id: usize
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub faces: Vec<Face>,
+    pub colors: Vec<Vertex>
 }
 
 trait FileFormat{
@@ -41,7 +42,9 @@ trait FileFormat{
 struct ObjParser{
     vertices: Vec<Vertex>,
     faces: Vec<Face>,
-    colors: HashMap<String, Vertex>
+    colors: Vec<Vertex>, 
+    color_translator: HashMap<String, usize>,
+    current_color: String,
 }
 
 impl ObjParser {
@@ -49,7 +52,9 @@ impl ObjParser {
         Self {
             vertices: vec![],
             faces: vec![],
-            colors: HashMap::new()
+            colors: vec![DEFAULT_COLOR],
+            current_color: String::new(),
+            color_translator: HashMap::new(),
         }
     }
 
@@ -85,11 +90,13 @@ impl ObjParser {
         Ok(coordinate)
     }
 
-    fn parse_color_file(&mut self, file: &File) -> Result<HashMap<String, Vertex>, FileParseError>{
+    fn parse_color_file(&mut self, file: &File) -> Result<HashMap<String, usize>, FileParseError>{
         let reader = BufReader::new(file);
 
-        let mut color_hash: HashMap<String, Vertex> = HashMap::new();
+        let mut colors: Vec<Vertex> = Vec::new();
+        let mut color_hash: HashMap<String, usize> = HashMap::new();
         let mut current_material = String::new(); 
+        let mut current_material_id = 1;
 
         for line_result in reader.lines() {
             let line = line_result?;
@@ -101,7 +108,10 @@ impl ObjParser {
 
                     match self.parse_vertices(color) {
                         Ok(v) => {
-                            color_hash.insert(current_material.clone(), v);
+                            colors.push(v);
+                            color_hash.insert(current_material.clone(), current_material_id);
+
+                            current_material_id += 1;
                         },
                         Err(e) => {return Err(e);}
                     }
@@ -109,6 +119,8 @@ impl ObjParser {
                 _ => {}
             }
         }
+
+        self.colors.append(&mut colors); 
 
         Ok(color_hash)
     }
@@ -126,6 +138,7 @@ impl FileFormat for ObjParser {
         let mesh = Mesh {
             vertices: std::mem::take(&mut self.vertices),
             faces: std::mem::take(&mut self.faces),
+            colors: std::mem::take(&mut self.colors),
         };
 
         Ok(mesh)
@@ -164,11 +177,14 @@ impl FileFormat for ObjParser {
                     };
 
                     match self.parse_color_file(&color_file){
-                        Ok(color_hash) => self.colors = color_hash,
+                        Ok(color_hash) => self.color_translator = color_hash,
                         Err(_) => return Ok(()),
                     };
                 }
             },
+            x if x.starts_with("usemtl ") => {
+                self.current_color = x[7..].trim().to_string();
+            }
             _ => {},
         }
 
@@ -192,18 +208,23 @@ impl FileFormat for ObjParser {
         let b = ObjParser::parse_face_obj_format(parts.next())?;
         let c = ObjParser::parse_face_obj_format(parts.next())?;
 
+        let color = match self.color_translator.get(&self.current_color) {
+            Some(color) => color,
+            None => &0,
+        };
+
         match ObjParser::parse_face_obj_format(parts.next()) {
             Ok(d) => {
                 return Ok(vec![
-                    Face {v1: a, v2: b, v3: c},
-                    Face {v1: a, v2: c, v3: d},   
+                    Face {v1: a, v2: b, v3: c, color_id: color.clone()},
+                    Face {v1: a, v2: c, v3: d, color_id: color.clone()},   
                 ])
             }
             Err(_) => {}
         };
 
         Ok(vec![
-            Face {v1: a, v2: b, v3: c}
+            Face {v1: a, v2: b, v3: c, color_id: color.clone()}
         ])
     }
 
