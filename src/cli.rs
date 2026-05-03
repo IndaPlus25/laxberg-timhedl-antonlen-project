@@ -1,12 +1,13 @@
 use wgpu::util::DeviceExt;
 use winit::event_loop::ActiveEventLoop;
 
-use crate::{App, builder::{pack_world_to_gpu, to_chunks}, file_parser, voxelizer};
+use crate::{App, builder::{pack_world_to_gpu, to_chunks}, file_handler::save_file_interface, file_parser, voxelizer};
 
 #[derive(Debug)]
 pub enum CliCommand {
     Quit,
     Parse{path: String, min_width: usize},
+    Save(String)
 }
 
 pub fn parse_command(input: &str) -> Option<CliCommand> {
@@ -18,6 +19,7 @@ pub fn parse_command(input: &str) -> Option<CliCommand> {
             path: path.to_string(), 
             min_width: x.parse().ok()? 
         }),
+        ["save", path] => Some(CliCommand::Save(path.to_string())),
         _ => None,
     }
 }
@@ -39,6 +41,13 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
             app.chunks = chunks;
             upload_world_to_gpu(app);
         }
+        CliCommand::Save(path) => {
+            let data = &app.chunks;
+            match save_file_interface(&path, data) {
+                Ok(_) => println!("Successfully saved data"),
+                Err(e) => println!("{}, please try again", e),
+            }
+        },
     }
 }
 
