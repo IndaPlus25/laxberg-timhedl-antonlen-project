@@ -52,7 +52,7 @@ impl ObjParser {
         Self {
             vertices: vec![],
             faces: vec![],
-            colors: vec![DEFAULT_COLOR],
+            colors: vec![DEFAULT_COLOR, DEFAULT_COLOR],
             current_color: String::new(),
             color_translator: HashMap::new(),
         }
@@ -96,12 +96,12 @@ impl ObjParser {
         let mut colors: Vec<Vertex> = Vec::new();
         let mut color_hash: HashMap<String, usize> = HashMap::new();
         let mut current_material = String::new(); 
-        let mut current_material_id = 1;
+        let mut current_material_id = 2;
 
         for line_result in reader.lines() {
             let line = line_result?;
-
-            match line {
+            
+            match line.to_lowercase() {
                 x if x.starts_with("newmtl ") => current_material = x[7..].trim().to_owned(),
                 x if x.starts_with("kd ") => {
                     let color = x[3..].trim();
@@ -178,8 +178,12 @@ impl FileFormat for ObjParser {
 
                     match self.parse_color_file(&color_file){
                         Ok(color_hash) => self.color_translator = color_hash,
-                        Err(_) => return Ok(()),
+                        Err(_) => {
+                            return Ok(())
+                        },
                     };
+
+                    println!("{:?}", self.color_translator)
                 }
             },
             x if x.starts_with("usemtl ") => {
@@ -210,7 +214,7 @@ impl FileFormat for ObjParser {
 
         let color = match self.color_translator.get(&self.current_color) {
             Some(color) => color,
-            None => &0,
+            None => &1,
         };
 
         match ObjParser::parse_face_obj_format(parts.next()) {
