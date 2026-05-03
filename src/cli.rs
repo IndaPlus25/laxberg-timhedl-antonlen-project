@@ -33,7 +33,13 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
         CliCommand::Quit => event_loop.exit(),
         CliCommand::Parse { path, min_width } => {
             println!("Parsing file to readable format...");
-            let mesh = file_parser::file_parse_interface(&path).unwrap().clone();
+            let mesh = match file_parser::file_parse_interface(&path) {
+                Ok(mesh) => mesh,
+                Err(e) => {
+                    println!("{}, please try again", e);
+                    return;
+                },
+            };
 
             println!("Translating points to voxel geometry...");
             let world_data = voxelizer::voxel_grid_from_triangles(mesh, min_width);
