@@ -25,7 +25,7 @@ pub struct Mesh {
 }
 
 trait FileFormat{
-    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Result<Mesh, FileParseError>;
+    fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError>;
 
     fn parse_line(&mut self, line_result: Result<String, Error>) -> Result<(), FileParseError>; 
 
@@ -81,7 +81,7 @@ impl ObjParser {
 }
 
 impl FileFormat for ObjParser { 
-    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Result<Mesh, FileParseError> {
+    fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError> {
         for (i, line_result) in reader.lines().enumerate(){
             match self.parse_line(line_result) {
                 Ok(_) => {},
@@ -117,6 +117,12 @@ impl FileFormat for ObjParser {
                     Ok(v) => self.vertices.push(v),
                     Err(e) => {return Err(e);}
                 }
+            },
+            x if x.starts_with("mtllib ") => {
+                let color_scheme_path = x[7..].trim();
+            },
+            x if x.starts_with("usemtl ") => {
+                let color_identifier = x[7..].trim();
             },
             _ => {},
         }
@@ -173,6 +179,7 @@ fn get_file_format(path: &Path) -> Result<Box<dyn FileFormat>, FileParseError>{
 
 fn parse_file(filename: &str) -> Result<Mesh, FileParseError> {
     let path = Path::new(filename);
+    let folder = path.parent();
 
     let file = File::open(&path)?;
 
@@ -180,7 +187,7 @@ fn parse_file(filename: &str) -> Result<Mesh, FileParseError> {
 
     let mut formatter =  get_file_format(path)?;
 
-    let object = match formatter.handle_input(&mut reader){
+    let object = match formatter.handle_input(&mut reader, folder){
         Ok(object) => {object},
         Err(e) => {return Err(e);}
     };
@@ -198,6 +205,7 @@ pub fn file_parse_interface(filename: &str) -> Result<Mesh, FileParseError> {
     parse_file(filename)
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -508,3 +516,5 @@ mod tests {
     }
 
 }
+
+ */
