@@ -9,6 +9,7 @@ mod vecmath;
 mod builder;
 mod worldgen;
 mod renderer;
+mod cli;
 
 use std::{collections::HashMap, f32::consts::FRAC_2_PI};
 use std::rc::Rc;
@@ -27,6 +28,7 @@ use crate::vecmath::*;
 use crate::octree::*;
 use crate::builder::*;
 use crate::renderer::*;
+use crate::cli::*;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
