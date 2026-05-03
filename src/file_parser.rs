@@ -1,6 +1,9 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Error, ErrorKind};
 use std::path::{Path};
+
+use bincode::de::read;
 
 use crate::error::{FileParseError};
 
@@ -16,6 +19,7 @@ pub struct Face {
     pub v1: usize,
     pub v2: usize,
     pub v3: usize,
+    pub color: Vertex
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -27,7 +31,7 @@ pub struct Mesh {
 trait FileFormat{
     fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError>;
 
-    fn parse_line(&mut self, line_result: Result<String, Error>) -> Result<(), FileParseError>; 
+    fn parse_line(&mut self, line_result: Result<String, Error>, folder: Option<&Path>) -> Result<(), FileParseError>; 
 
     fn parse_vertices(&self, coordinates: &str) -> Result<Vertex, FileParseError>;
 
@@ -37,6 +41,7 @@ trait FileFormat{
 struct ObjParser{
     vertices: Vec<Vertex>,
     faces: Vec<Face>,
+    colors: HashMap<String, Vertex>
 }
 
 impl ObjParser {
@@ -44,6 +49,7 @@ impl ObjParser {
         Self {
             vertices: vec![],
             faces: vec![],
+            colors: HashMap::new()
         }
     }
 
@@ -78,12 +84,40 @@ impl ObjParser {
 
         Ok(coordinate)
     }
+
+    fn parse_color_file(&mut self, file: &File) -> Result<HashMap<String, Vertex>, FileParseError>{
+        let reader = BufReader::new(file);
+
+        let mut color_hash: HashMap<String, Vertex> = HashMap::new();
+        let mut current_material = String::new(); 
+
+        for line_result in reader.lines() {
+            let line = line_result?;
+
+            match line {
+                x if x.starts_with("newmtl ") => current_material = x[7..].trim().to_owned(),
+                x if x.starts_with("kd ") => {
+                    let color = x[3..].trim();
+
+                    match self.parse_vertices(color) {
+                        Ok(v) => {
+                            color_hash.insert(current_material.clone(), v);
+                        },
+                        Err(e) => {return Err(e);}
+                    }
+                },
+                _ => {}
+            }
+        }
+
+        Ok(color_hash)
+    }
 }
 
 impl FileFormat for ObjParser { 
     fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError> {
         for (i, line_result) in reader.lines().enumerate(){
-            match self.parse_line(line_result) {
+            match self.parse_line(line_result, folder) {
                 Ok(_) => {},
                 Err(error) => {return Err(FileParseError::FailedLineParse(i, Box::new(error)));}
             }
@@ -97,7 +131,7 @@ impl FileFormat for ObjParser {
         Ok(mesh)
     }
 
-    fn parse_line(&mut self, line_result: Result<String, Error>) -> Result<(), FileParseError> {
+    fn parse_line(&mut self, line_result: Result<String, Error>, folder: Option<&Path>) -> Result<(), FileParseError> {
         let line = line_result?;
         let trimmed_line = line.trim();
 
@@ -120,9 +154,20 @@ impl FileFormat for ObjParser {
             },
             x if x.starts_with("mtllib ") => {
                 let color_scheme_path = x[7..].trim();
-            },
-            x if x.starts_with("usemtl ") => {
-                let color_identifier = x[7..].trim();
+
+                if let Some(folder_path) = folder{
+                    let full_path = folder_path.join(color_scheme_path);
+
+                    let color_file = match File::open(full_path){
+                        Ok(file) => file,
+                        Err(_) => return Ok(()),
+                    };
+
+                    match self.parse_color_file(&color_file){
+                        Ok(color_hash) => self.colors = color_hash,
+                        Err(_) => return Ok(()),
+                    };
+                }
             },
             _ => {},
         }
