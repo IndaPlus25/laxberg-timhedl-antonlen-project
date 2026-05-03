@@ -177,7 +177,8 @@ impl ApplicationHandler for App {
                 state.render(&self.player, self.render_distance, &self.colours, &self.lighting);
                 // Emits a new redraw requested event.
                 state.get_window().request_redraw();
-
+                
+                //=============================
                 //Fps counter:
                 self.frames_this_second += 1;
 
@@ -190,6 +191,7 @@ impl ApplicationHandler for App {
                     self.frames_this_second = 0;
                     self.last_fps_update = Instant::now();
                 }
+                //=============================
 
                 let delta_time = Instant::now().duration_since(self.last_redraw).as_secs_f32();
                 let move_speed = 10.0;
