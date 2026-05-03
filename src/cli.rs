@@ -1,5 +1,3 @@
-use std::path;
-
 use wgpu::util::DeviceExt;
 use winit::event_loop::ActiveEventLoop;
 
