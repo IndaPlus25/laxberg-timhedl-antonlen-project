@@ -712,7 +712,7 @@ impl ApplicationHandler<CliCommand> for App {
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, cmd: CliCommand) {
-
+        execute_cli_commands(self, event_loop, cmd);
     }
 }
 
@@ -728,7 +728,6 @@ fn main() {
         let stdin = std::io::stdin();
 
         while let Some(Ok(line)) = stdin.lock().lines().next() {
-
             match parse_command(&line) {
                 Some(cmd) => {
                     if proxy.send_event(cmd).is_err() {
