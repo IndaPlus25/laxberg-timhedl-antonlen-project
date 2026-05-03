@@ -739,13 +739,7 @@ fn main() {
         }
     });
     
-    let mesh = file_parser::file_parse_interface("Susan.obj").unwrap().clone();
-    let world_data = voxelizer::voxel_grid_from_triangles(mesh, 100);
-
-    println!("Compressing world into Sparse Voxel Octrees...");
-    let chunks = to_chunks(&world_data);
-    println!("Successfully built {} chunks!", chunks.len());
-
+    let chunks = HashMap::new();
 
     let player = Player {
         position: V3{
