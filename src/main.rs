@@ -315,8 +315,19 @@ fn main() {
 
     event_loop.set_control_flow(ControlFlow::Poll);
     
-    let mesh = file_parser::file_parse_interface("Susan.obj").unwrap().clone();
-    let world_data = voxelizer::voxel_grid_from_triangles(mesh, 100);
+    let mesh = file_parser::file_parse_interface("bugatti/bugatti.obj").unwrap().clone();
+
+    let mut colours: Vec<[f32; 4]> = vec![];
+
+    for color in &mesh.colors{
+        let translated_color = [color.x, color.y, color.z, 1.0];
+
+        colours.push(translated_color);
+    }
+
+    println!("{:?}", colours);
+
+    let world_data = voxelizer::voxel_grid_from_triangles(mesh, 10);
 
     println!("Compressing world into Sparse Voxel Octrees...");
     let chunks = to_chunks(&world_data);
