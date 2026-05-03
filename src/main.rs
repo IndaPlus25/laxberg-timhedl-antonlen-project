@@ -13,6 +13,7 @@ mod cli;
 
 use std::{collections::HashMap, f32::consts::FRAC_2_PI};
 use std::rc::Rc;
+use std::io::BufRead;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -544,7 +545,7 @@ impl State {
 }
 
 
-impl ApplicationHandler for App {
+impl ApplicationHandler<CliCommand> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         // Create window object
         let window = Arc::new(
@@ -709,14 +710,35 @@ impl ApplicationHandler for App {
             _ => (),
         }
     }
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, cmd: CliCommand) {
+
+    }
 }
 
 fn main() {
     env_logger::init();
 
-    let event_loop = EventLoop::new().unwrap();
+    let event_loop: EventLoop<CliCommand> = EventLoop::with_user_event().build().unwrap();
+    let proxy = event_loop.create_proxy();
 
     event_loop.set_control_flow(ControlFlow::Poll);
+
+    std::thread::spawn(move || {
+        let stdin = std::io::stdin();
+
+        while let Some(Ok(line)) = stdin.lock().lines().next() {
+
+            match parse_command(&line) {
+                Some(cmd) => {
+                    if proxy.send_event(cmd).is_err() {
+                        break; 
+                    }
+                }
+                None => eprintln!("Unknown command: '{}'", line),
+            }
+        }
+    });
     
     let mesh = file_parser::file_parse_interface("Susan.obj").unwrap().clone();
     let world_data = voxelizer::voxel_grid_from_triangles(mesh, 100);
