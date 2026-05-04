@@ -275,7 +275,7 @@ pub fn file_parse_interface(filename: &str) -> Result<Mesh, FileParseError> {
     parse_file(filename)
 }
 
-/*
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -348,47 +348,47 @@ mod tests {
         let faces = vec![
             // o alights.014_Plane.051
             // f 1//1 2//1 4//1 3//1
-            Face { v1: 0, v2: 1, v3: 3 },
-            Face { v1: 0, v2: 3, v3: 2 },
+            Face { v1: 0, v2: 1, v3: 3, color_id: 1},
+            Face { v1: 0, v2: 3, v3: 2, color_id: 1},
 
             // o alights.000_Plane.049
             // f 5//2 6//2 8//2 7//2
-            Face { v1: 4, v2: 5, v3: 7 },
-            Face { v1: 4, v2: 7, v3: 6 },
+            Face { v1: 4, v2: 5, v3: 7, color_id: 1},
+            Face { v1: 4, v2: 7, v3: 6, color_id: 1},
 
             // o alights.015_Plane.050
             // f 9//3 10//3 12//3 11//3
-            Face { v1: 8, v2: 9, v3: 11 },
-            Face { v1: 8, v2: 11, v3: 10 },
+            Face { v1: 8, v2: 9, v3: 11, color_id: 1},
+            Face { v1: 8, v2: 11, v3: 10, color_id: 1},
 
             // f 13//3 14//3 16//3 15//3
-            Face { v1: 12, v2: 13, v3: 15 },
-            Face { v1: 12, v2: 15, v3: 14 },
+            Face { v1: 12, v2: 13, v3: 15, color_id: 1},
+            Face { v1: 12, v2: 15, v3: 14, color_id: 1},
 
             // f 17//3 18//3 20//3 19//3
-            Face { v1: 16, v2: 17, v3: 19 },
-            Face { v1: 16, v2: 19, v3: 18 },
+            Face { v1: 16, v2: 17, v3: 19, color_id: 1},
+            Face { v1: 16, v2: 19, v3: 18, color_id: 1},
 
             // f 21//3 22//3 24//3 23//3
-            Face { v1: 20, v2: 21, v3: 23 },
-            Face { v1: 20, v2: 23, v3: 22 },
+            Face { v1: 20, v2: 21, v3: 23, color_id: 1},
+            Face { v1: 20, v2: 23, v3: 22, color_id: 1},
 
             // f 25//3 26//3 28//3 27//3
-            Face { v1: 24, v2: 25, v3: 27 },
-            Face { v1: 24, v2: 27, v3: 26 },
+            Face { v1: 24, v2: 25, v3: 27, color_id: 1},
+            Face { v1: 24, v2: 27, v3: 26, color_id: 1},
 
             // f 29//3 30//3 32//3 31//3
-            Face { v1: 28, v2: 29, v3: 31 },
-            Face { v1: 28, v2: 31, v3: 30 },
+            Face { v1: 28, v2: 29, v3: 31, color_id: 1},
+            Face { v1: 28, v2: 31, v3: 30, color_id: 1},
 
             // f 33//3 34//3 36//3 35//3
-            Face { v1: 32, v2: 33, v3: 35 },
-            Face { v1: 32, v2: 35, v3: 34 },
+            Face { v1: 32, v2: 33, v3: 35, color_id: 1},
+            Face { v1: 32, v2: 35, v3: 34, color_id: 1},
 
             // o o Plane.047_Plane.042
             // f 37//4 38//4 40//4 39//4
-            Face { v1: 36, v2: 37, v3: 39 },
-            Face { v1: 36, v2: 39, v3: 38 },
+            Face { v1: 36, v2: 37, v3: 39, color_id: 1},
+            Face { v1: 36, v2: 39, v3: 38, color_id: 1},
         ];
 
         assert_eq!(faces, mesh.faces)
@@ -448,27 +448,28 @@ mod tests {
                 Vertex { x: -28.859720, y: 12.516749, z: 9.240364 },
             ],
             faces: vec![
-                Face { v1: 0, v2: 1, v3: 3 },
-                Face { v1: 0, v2: 3, v3: 2 },
-                Face { v1: 4, v2: 5, v3: 7 },
-                Face { v1: 4, v2: 7, v3: 6 },
-                Face { v1: 8, v2: 9, v3: 11 },
-                Face { v1: 8, v2: 11, v3: 10 },
-                Face { v1: 12, v2: 13, v3: 15 },
-                Face { v1: 12, v2: 15, v3: 14 },
-                Face { v1: 16, v2: 17, v3: 19 },
-                Face { v1: 16, v2: 19, v3: 18 },
-                Face { v1: 20, v2: 21, v3: 23 },
-                Face { v1: 20, v2: 23, v3: 22 },
-                Face { v1: 24, v2: 25, v3: 27 },
-                Face { v1: 24, v2: 27, v3: 26 },
-                Face { v1: 28, v2: 29, v3: 31 },
-                Face { v1: 28, v2: 31, v3: 30 },
-                Face { v1: 32, v2: 33, v3: 35 },
-                Face { v1: 32, v2: 35, v3: 34 },
-                Face { v1: 36, v2: 37, v3: 39 },
-                Face { v1: 36, v2: 39, v3: 38 },
+                Face { v1: 0, v2: 1, v3: 3, color_id: 1},
+                Face { v1: 0, v2: 3, v3: 2, color_id: 1},
+                Face { v1: 4, v2: 5, v3: 7, color_id: 1},
+                Face { v1: 4, v2: 7, v3: 6, color_id: 1},
+                Face { v1: 8, v2: 9, v3: 11, color_id: 1 },
+                Face { v1: 8, v2: 11, v3: 10, color_id: 1},
+                Face { v1: 12, v2: 13, v3: 15, color_id: 1},
+                Face { v1: 12, v2: 15, v3: 14, color_id: 1},
+                Face { v1: 16, v2: 17, v3: 19, color_id: 1},
+                Face { v1: 16, v2: 19, v3: 18, color_id: 1},
+                Face { v1: 20, v2: 21, v3: 23, color_id: 1},
+                Face { v1: 20, v2: 23, v3: 22, color_id: 1},
+                Face { v1: 24, v2: 25, v3: 27, color_id: 1},
+                Face { v1: 24, v2: 27, v3: 26, color_id: 1},
+                Face { v1: 28, v2: 29, v3: 31, color_id: 1},
+                Face { v1: 28, v2: 31, v3: 30, color_id: 1},
+                Face { v1: 32, v2: 33, v3: 35, color_id: 1},
+                Face { v1: 32, v2: 35, v3: 34, color_id: 1},
+                Face { v1: 36, v2: 37, v3: 39, color_id: 1},
+                Face { v1: 36, v2: 39, v3: 38, color_id: 1},
             ],
+            colors: vec![DEFAULT_COLOR, DEFAULT_COLOR],
         };
 
         assert_eq!(mesh, expected_mesh)
@@ -586,5 +587,3 @@ mod tests {
     }
 
 }
-
- */
