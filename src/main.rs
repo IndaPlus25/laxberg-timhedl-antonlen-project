@@ -33,6 +33,8 @@ use crate::renderer::*;
 use crate::state::*;
 use crate::cli::*;
 
+const DEFAULT_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+
 pub struct Player {
     pub position: V3,
     pub direction: (f32, f32),
@@ -339,7 +341,7 @@ fn main() {
     });
     
     let chunks = HashMap::new();
-    let colours = vec![[1.0, 1.0, 1.0, 1.0]];
+    let colours = vec![DEFAULT_COLOR];
 
     let player = Player {
         position: V3{
