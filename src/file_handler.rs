@@ -127,7 +127,7 @@ fn load_file(filepath: &Path) -> Result<(HashMap<V3i, Chunk>, Vec<[f32; 4]>), Sa
     Ok((world_map, loaded_color))
 }
 
-/*
+
 #[cfg(test)]
 mod tests {
     use std::io::ErrorKind;
@@ -147,9 +147,9 @@ mod tests {
 
         let filepath = "test_file1.bin";
 
-        save_file_interface(filepath, &original_data).expect("Failed to save data");
+        save_file_interface(filepath, &original_data, &vec![[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0]]).expect("Failed to save data");
 
-        let loaded_data = load_file_interface(filepath).expect("Failed to load data");
+        let (loaded_data, loaded_color) = load_file_interface(filepath).expect("Failed to load data");
 
         let orig_chunk = original_data.get(&pos).unwrap();
         let load_chunk = loaded_data.get(&pos).unwrap();
@@ -166,6 +166,7 @@ mod tests {
             "max_pos did not match!"
         );
         assert_eq!(orig_chunk.data, load_chunk.data);
+        assert_eq!(vec![[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0]], loaded_color);
 
         std::fs::remove_file(filepath).unwrap();
     }
@@ -181,7 +182,7 @@ mod tests {
             .and_then(|ext| ext.to_str())
             .map(|ext|ext.to_lowercase());
 
-        let save_result = save_file_interface(filepath, &original_data);
+        let save_result = save_file_interface(filepath, &original_data, &vec![[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0]]);
         let actual_err = save_result.unwrap_err();
 
         assert!(
@@ -250,7 +251,7 @@ mod tests {
   
         let filepath = "magic-folder/test_file5.bin";
 
-        let save_result = save_file_interface(filepath, &original_data);
+        let save_result = save_file_interface(filepath, &original_data, &vec![[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0]]);
         let actual_err = save_result.unwrap_err();
 
         assert!(
@@ -261,4 +262,3 @@ mod tests {
         );
     }
 }
-*/
