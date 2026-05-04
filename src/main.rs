@@ -339,6 +339,7 @@ fn main() {
     });
     
     let chunks = HashMap::new();
+    let colours = vec![[1.0, 1.0, 1.0, 1.0]];
 
     let player = Player {
         position: V3{
