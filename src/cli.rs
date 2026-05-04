@@ -59,16 +59,18 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
         }
         CliCommand::Save(path) => {
             let data = &app.chunks;
-            match save_file_interface(&path, data) {
+            let colors = &app.colours;
+            match save_file_interface(&path, data, colors) {
                 Ok(_) => println!("Successfully saved data"),
                 Err(e) => println!("{}, please try again", e),
             }
         },
         CliCommand::Load(path) => {
             match load_file_interface(&path) {
-                Ok(data) => {
+                Ok((data, colors)) => {
                     println!("Successfully loaded data");
                     app.chunks = data;
+                    app.colours = colors;
                     upload_world_to_gpu(app);
                 },
                 Err(e) => println!("{}, please try again", e),
