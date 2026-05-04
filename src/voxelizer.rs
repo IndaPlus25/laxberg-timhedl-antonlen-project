@@ -313,11 +313,11 @@ pub fn voxel_grid_from_triangles(mesh: Mesh, min_width: usize) -> Vec<Vec<Vec<u3
 
     let mut voxel_grid = vec![vec![vec![0; cubes_per_axis[0]]; cubes_per_axis[1]]; cubes_per_axis[2]];
 
+    let mut rng = rand::rng();
+
     // Iterate over x,y,z and calculate the cube's position in the "triangle world"
     for z_step in 0..cubes_per_axis[2] {
         let z = max[2] - (cube_width * (z_step as f32) + cube_width * 0.5);
-
-        println!("{}% - done", (z_step as f32 * 100.0) / cubes_per_axis[2] as f32);
 
         for y_step in 0..cubes_per_axis[1] {
             let y = min[1] + (cube_width * (y_step as f32) + cube_width * 0.5);
