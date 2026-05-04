@@ -55,9 +55,11 @@ pub struct State {
 
 impl State {
     pub async fn new(display: OwnedDisplayHandle, window: Arc<Window>, gpu_world_data: &[u32], render_distance: u32) -> State {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(
-            Box::new(display),
-        ));
+        let mut descriptor = wgpu::InstanceDescriptor::new_with_display_handle(Box::new(display));
+        descriptor.backends = wgpu::Backends::VULKAN;
+        descriptor.flags |= wgpu::InstanceFlags::DEBUG;
+        let instance = wgpu::Instance::new(descriptor);
+
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions::default())
             .await
@@ -103,7 +105,7 @@ impl State {
 
         let hit_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Hit Buffer"),
-            size: pixel_count * 8,  
+            size: pixel_count * 32,  
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -278,7 +280,6 @@ impl State {
             // 1. Calculate the new total number of pixels
             let pixel_count = (new_size.width * new_size.height) as wgpu::BufferAddress;
 
-            // 3. Re-allocate the Hit Buffer (8 bytes per pixel)
             self.hit_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Hit Buffer (Resized)"),
                 size: pixel_count * 32,

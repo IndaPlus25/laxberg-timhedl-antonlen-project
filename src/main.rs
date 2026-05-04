@@ -32,6 +32,7 @@ use crate::builder::*;
 use crate::renderer::*;
 use crate::state::*;
 use crate::cli::*;
+use crate::worldgen::generate_random_world;
 
 pub struct Player {
     pub position: V3,
@@ -337,17 +338,19 @@ fn main() {
             }
         }
     });
+
+    let world_data = generate_random_world(32*8, 32*8, 32*8, 1.0, 1);
     
-    let chunks = HashMap::new();
+    let chunks = to_chunks(&world_data);
 
     let player = Player {
         position: V3{
-            x: -60.5,
-            y: 20.1,
-            z: 0.1,
+            x: 32.0*8.0,
+            y: 32.0*18.0,
+            z: 32.0*8.0,
         },
-        // direction: (0.0, -std::f32::consts::FRAC_PI_2)               
-        direction: (std::f32::consts::FRAC_PI_3, 0.0)               
+        direction: (0.0, -std::f32::consts::FRAC_PI_2)               
+        //direction: (std::f32::consts::FRAC_PI_3, 0.0)               
     };
 
     let colours: Vec<[f32; 4]> = vec![
@@ -373,7 +376,7 @@ fn main() {
         frames_this_second: 0,
         player,
         current_acc_fps: 0.0,
-        render_distance: 8,
+        render_distance: 16,
         colours,
         lighting,
         key_presses: KeyPresses::new(),

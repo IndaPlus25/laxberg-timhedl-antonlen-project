@@ -150,7 +150,9 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
 
     if (t_min >= t_max || t_max < 0.0) { return false; }
 
-    var stack: array<StackFrame, 5>;
+    var stack: array<u32, 5>;
+
+    var stack_subs: u32 = 0u;
     var sp: i32 = 0;
 
     let root_node_data = world_data[chunk_offset];
@@ -160,13 +162,16 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
 
     let mid = (entry + exit) * 0.5;
     let root_sub_voxel = get_first_child_intersect(t_min, entry, mid);
-
-    stack[0] = StackFrame(root_node_data, root_sub_voxel);
+    
+    stack_subs = root_sub_voxel;
+    stack[0] = root_node_data;
     
     while (sp >= 0) {
+        let shift = u32(sp) * 6u;
+
         // Read current frame
-        var current_node = stack[sp].node_data;
-        var raw_sub = stack[sp].sub_voxel;
+        var current_node = stack[sp];
+        var raw_sub = (stack_subs >> shift) & 0x3Fu;
         
         let visited = (raw_sub & 16u) != 0u;
         let actual_sub = raw_sub & 15u; 
@@ -175,8 +180,8 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
         if (actual_sub > 7u) {
             sp--; 
             if (sp >= 0) {
-
-                let parent_sub = stack[sp].sub_voxel & 15u;
+                let parent_shift = u32(sp) * 6u;
+                let parent_sub = (stack_subs >> parent_shift) & 15u;
 
                 current_center.x -= select(-current_half_size, current_half_size, (parent_sub & 1u) != 0u);
                 current_center.y -= select(-current_half_size, current_half_size, (parent_sub & 2u) != 0u);
@@ -229,7 +234,7 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
                 return true;
             }
 
-            stack[sp].sub_voxel = actual_sub | 16u;
+            stack_subs |= (16u << shift);
             
             current_half_size *= 0.5;
             current_center.x += select(-current_half_size, current_half_size, (actual_sub & 1u) != 0u);
@@ -245,8 +250,11 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
             let child_mid = (sub_entry + sub_exit) * 0.5;
 
             sp++;
+            let new_shift = u32(sp) * 6u;
+            let new_sub = get_first_child_intersect(child_t_min, sub_entry, child_mid);
 
-            stack[sp] = StackFrame(node_at_index, get_first_child_intersect(child_t_min, sub_entry, child_mid));
+            stack[sp] = node_at_index;
+            stack_subs = (stack_subs & ~(0x3Fu << new_shift)) | (new_sub << new_shift);
 
             continue;
         }
@@ -257,7 +265,8 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
             select(f_mid.z, f_exit.z, (actual_sub & 4u) != 0u)
         );
 
-        stack[sp].sub_voxel = get_next_sub_voxel(actual_sub, vec_exit_plane(node_exit));
+        let next_sub = get_next_sub_voxel(actual_sub, vec_exit_plane(node_exit));
+        stack_subs = (stack_subs & ~(0x3Fu << shift)) | (next_sub << shift);
 
     }
     
@@ -288,7 +297,9 @@ fn find_intersection_anyhit(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min
 
     if (t_min >= t_max || t_max < 0.0) { return false; }
 
-    var stack: array<StackFrame, 5>;
+    var stack: array<u32, 5>;
+
+    var stack_subs: u32 = 0u;
     var sp: i32 = 0;
 
     let root_node_data = world_data[chunk_offset];
@@ -298,13 +309,16 @@ fn find_intersection_anyhit(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min
 
     let mid = (entry + exit) * 0.5;
     let root_sub_voxel = get_first_child_intersect(t_min, entry, mid);
-
-    stack[0] = StackFrame(root_node_data, root_sub_voxel);
+    
+    stack_subs = root_sub_voxel;
+    stack[0] = root_node_data;
     
     while (sp >= 0) {
+        let shift = u32(sp) * 6u;
+
         // Read current frame
-        var current_node = stack[sp].node_data;
-        var raw_sub = stack[sp].sub_voxel;
+        var current_node = stack[sp];
+        var raw_sub = (stack_subs >> shift) & 0x3Fu;
         
         let visited = (raw_sub & 16u) != 0u;
         let actual_sub = raw_sub & 15u; 
@@ -313,8 +327,8 @@ fn find_intersection_anyhit(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min
         if (actual_sub > 7u) {
             sp--; 
             if (sp >= 0) {
-
-                let parent_sub = stack[sp].sub_voxel & 15u;
+                let parent_shift = u32(sp) * 6u;
+                let parent_sub = (stack_subs >> parent_shift) & 15u;
 
                 current_center.x -= select(-current_half_size, current_half_size, (parent_sub & 1u) != 0u);
                 current_center.y -= select(-current_half_size, current_half_size, (parent_sub & 2u) != 0u);
@@ -343,7 +357,7 @@ fn find_intersection_anyhit(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min
                  return true;
             }
 
-            stack[sp].sub_voxel = actual_sub | 16u;
+            stack_subs |= (16u << shift);
             
             current_half_size *= 0.5;
             current_center.x += select(-current_half_size, current_half_size, (actual_sub & 1u) != 0u);
@@ -359,163 +373,12 @@ fn find_intersection_anyhit(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min
             let child_mid = (sub_entry + sub_exit) * 0.5;
 
             sp++;
-
-            stack[sp] = StackFrame(node_at_index, get_first_child_intersect(child_t_min, sub_entry, child_mid));
-
-            continue;
-        }
-
-        let node_exit = vec3<f32>(
-            select(f_mid.x, f_exit.x, (actual_sub & 1u) != 0u),
-            select(f_mid.y, f_exit.y, (actual_sub & 2u) != 0u),
-            select(f_mid.z, f_exit.z, (actual_sub & 4u) != 0u)
-        );
-
-        stack[sp].sub_voxel = get_next_sub_voxel(actual_sub, vec_exit_plane(node_exit));
-
-    }
-    
-    return false;
-}
-
-
-
-//Optimised for warp divergence so use something like this for shadow rays. 
-/*
-fn find_intersection_anyhit(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<f32>, chunk_max: vec3<f32>, chunk_offset: u32, out_payload: ptr<function, u32>) -> bool {
-    var direction_mask: u32 = 0u;
-    var pos_ray_dir = ray_dir;
-    var pos_ray_origin = ray_origin;
-
-    if (pos_ray_dir.x < 0.0) { direction_mask |= 1u; pos_ray_dir.x = -pos_ray_dir.x; pos_ray_origin.x = chunk_max.x - (ray_origin.x - chunk_min.x); }
-    if (pos_ray_dir.y < 0.0) { direction_mask |= 2u; pos_ray_dir.y = -pos_ray_dir.y; pos_ray_origin.y = chunk_max.y - (ray_origin.y - chunk_min.y); }
-    if (pos_ray_dir.z < 0.0) { direction_mask |= 4u; pos_ray_dir.z = -pos_ray_dir.z; pos_ray_origin.z = chunk_max.z - (ray_origin.z - chunk_min.z); }
-
-    let safe_dir = max(pos_ray_dir, vec3<f32>(0.0000001));
-    let pos_inv_dir = vec3<f32>(1.0) / safe_dir;
-
-    let entry = (chunk_min - pos_ray_origin) * pos_inv_dir;
-    let exit = (chunk_max - pos_ray_origin) * pos_inv_dir;
-
-    let t_min = max(entry.x, max(entry.y, entry.z));
-    let t_max = min(exit.x, min(exit.y, exit.z));
-
-    if (t_min >= t_max || t_max < 0.0) { return false; }
-
-    let root_node_data = world_data[chunk_offset];
-    
-    var current_center = (chunk_min + chunk_max) * 0.5;
-    var current_half_size = (chunk_max.x - chunk_min.x) * 0.5; 
-
-    let mid = (entry + exit) * 0.5;
-    let root_sub_voxel = get_first_child_intersect(t_min, entry, mid);
-    
-    //ful fusk stack
-    var f0_node: u32; var f0_sub: u32;
-    var f1_node: u32; var f1_sub: u32;
-    var f2_node: u32; var f2_sub: u32;
-    var f3_node: u32; var f3_sub: u32;
-    var f4_node: u32; var f4_sub: u32;
-
-    var sp: i32 = 0; 
-
-    f0_node = root_node_data;
-    f0_sub = root_sub_voxel;
-
-    while (sp >= 0) {
-        // Read current frame
-        var current_node: u32;
-        var raw_sub: u32;
-        
-        switch sp {
-            case 0: { current_node = f0_node; raw_sub = f0_sub; }
-            case 1: { current_node = f1_node; raw_sub = f1_sub; }
-            case 2: { current_node = f2_node; raw_sub = f2_sub; }
-            case 3: { current_node = f3_node; raw_sub = f3_sub; }
-            case 4: { current_node = f4_node; raw_sub = f4_sub; }
-            default: { break; }
-        }
-        
-        let visited = (raw_sub & 16u) != 0u;
-        let actual_sub = raw_sub & 15u; 
-
-        // ASCEND
-        if (actual_sub > 7u) {
-            sp--; 
-            if (sp >= 0) {
-
-                var parent_sub: u32;
-                switch sp {
-                    case 0: { parent_sub = f0_sub; }
-                    case 1: { parent_sub = f1_sub; }
-                    case 2: { parent_sub = f2_sub; }
-                    case 3: { parent_sub = f3_sub; }
-                    case 4: { parent_sub = f4_sub; }
-                    default: { parent_sub = 0u; }
-                }
-                
-                parent_sub &= 15u;
-                current_center.x -= select(-current_half_size, current_half_size, (parent_sub & 1u) != 0u);
-                current_center.y -= select(-current_half_size, current_half_size, (parent_sub & 2u) != 0u);
-                current_center.z -= select(-current_half_size, current_half_size, (parent_sub & 4u) != 0u);
-                current_half_size *= 2.0;
-            }
-            continue;
-        }
-
-        let voxel_min = current_center - vec3<f32>(current_half_size);
-        let voxel_max = current_center + vec3<f32>(current_half_size);
-        let f_entry = (voxel_min - pos_ray_origin) * pos_inv_dir;
-        let f_exit = (voxel_max - pos_ray_origin) * pos_inv_dir;
-        let f_mid = (f_entry + f_exit) * 0.5;
-
-        let true_sub_voxel = actual_sub ^ direction_mask;
-        let child_exists = has_child(current_node, true_sub_voxel);
-        
-        // DECEND
-        if (!visited && child_exists) {
-            let pointer = get_ending(current_node);
-            let child_index = pointer + child_pop_count(current_node, true_sub_voxel);
-            let node_at_index = world_data[chunk_offset + child_index];
-
-            if (is_leaf(current_node, true_sub_voxel)) {
-                //out_payload = get_ending(node_at_index);
-                return true;
-            }
-
-            let visited_sub = actual_sub | 16u;
-            switch sp {
-                case 0: { f0_sub = visited_sub; }
-                case 1: { f1_sub = visited_sub; }
-                case 2: { f2_sub = visited_sub; }
-                case 3: { f3_sub = visited_sub; }
-                case 4: { f4_sub = visited_sub; }
-                default: {}
-            }
-            
-            current_half_size *= 0.5;
-            current_center.x += select(-current_half_size, current_half_size, (actual_sub & 1u) != 0u);
-            current_center.y += select(-current_half_size, current_half_size, (actual_sub & 2u) != 0u);
-            current_center.z += select(-current_half_size, current_half_size, (actual_sub & 4u) != 0u);
-
-            let child_voxel_min = current_center - vec3<f32>(current_half_size);
-            let child_voxel_max = current_center + vec3<f32>(current_half_size);
-            let sub_entry = (child_voxel_min - pos_ray_origin) * pos_inv_dir;
-            let sub_exit = (child_voxel_max - pos_ray_origin) * pos_inv_dir;
-            
-            let child_t_min = max(sub_entry.x, max(sub_entry.y, sub_entry.z));
-            let child_mid = (sub_entry + sub_exit) * 0.5;
-
-            sp++;
+            let new_shift = u32(sp) * 6u;
             let new_sub = get_first_child_intersect(child_t_min, sub_entry, child_mid);
-            switch sp {
-                case 0: { f0_node = node_at_index; f0_sub = new_sub; }
-                case 1: { f1_node = node_at_index; f1_sub = new_sub; }
-                case 2: { f2_node = node_at_index; f2_sub = new_sub; }
-                case 3: { f3_node = node_at_index; f3_sub = new_sub; }
-                case 4: { f4_node = node_at_index; f4_sub = new_sub; }
-                default: {}
-            }
+
+            stack[sp] = node_at_index;
+            stack_subs = (stack_subs & ~(0x3Fu << new_shift)) | (new_sub << new_shift);
+
             continue;
         }
 
@@ -524,21 +387,14 @@ fn find_intersection_anyhit(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min
             select(f_mid.y, f_exit.y, (actual_sub & 2u) != 0u),
             select(f_mid.z, f_exit.z, (actual_sub & 4u) != 0u)
         );
-        let next_sub = get_next_sub_voxel(actual_sub, vec_exit_plane(node_exit));
 
-        switch sp {
-            case 0: { f0_sub = next_sub; }
-            case 1: { f1_sub = next_sub; }
-            case 2: { f2_sub = next_sub; }
-            case 3: { f3_sub = next_sub; }
-            case 4: { f4_sub = next_sub; }
-            default: {}
-        }
+        let next_sub = get_next_sub_voxel(actual_sub, vec_exit_plane(node_exit));
+        stack_subs = (stack_subs & ~(0x3Fu << shift)) | (next_sub << shift);
+
     }
     
     return false;
 }
-*/
 
 // ==========================================
 // 5. MAKRO-TRAVERSERING (cast_ray octree.rs)
