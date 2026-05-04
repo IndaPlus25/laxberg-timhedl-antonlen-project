@@ -1,4 +1,4 @@
-use rand::{self, RngExt};
+use std::sync::atomic::{AtomicU32, Ordering};
 use super::file_parser::{Mesh, Face};
 use rayon::prelude::*;
 
@@ -312,11 +312,21 @@ pub fn voxel_grid_from_triangles(mesh: Mesh, min_width: usize) -> Vec<Vec<Vec<u3
         (axis_width[2] / cube_width).ceil() as usize,
     ];
 
-    let mut voxel_grid = vec![vec![vec![0; cubes_per_axis[0]]; cubes_per_axis[1]]; cubes_per_axis[2]];
+    // Create a voxel grid of Atomic u32
+    let voxel_grid: Vec<Vec<Vec<AtomicU32>>> = std::iter::repeat_with(|| {
+        std::iter::repeat_with(|| {
+            std::iter::repeat_with(|| AtomicU32::new(0))
+                .take(cubes_per_axis[0])
+                .collect()
+        })
+        .take(cubes_per_axis[1])
+        .collect()
+    })
+    .take(cubes_per_axis[2])
+    .collect();
 
-    let mut rng = rand::rng();
-
-    for triangle in &mesh.faces {
+    // Mutithread the iteration of triangles
+    mesh.faces.par_iter().for_each(|triangle| {
         let vertecies = vertecies_from_mesh_face(&mesh, &triangle);
         let max = [
             vertecies[0][0].max(vertecies[1][0]).max(vertecies[2][0]),
@@ -329,14 +339,17 @@ pub fn voxel_grid_from_triangles(mesh: Mesh, min_width: usize) -> Vec<Vec<Vec<u3
             vertecies[0][2].min(vertecies[1][2]).min(vertecies[2][2])
         ];
 
+        // The axis index for one side of the triangle AABB
         let z_start = ((global_max[2] - max[2]) / cube_width).max(0.0).floor() as usize;
         let y_start = ((min[1] - global_min[1]) / cube_width).max(0.0).floor() as usize;
         let x_start = ((min[0] - global_min[0]) / cube_width).max(0.0).floor() as usize;
 
+        // The axis index for the other side of the triangle AABB
         let z_end = (((global_max[2] - min[2]) / cube_width).floor() as usize).min(cubes_per_axis[2].saturating_sub(1));
         let y_end = (((max[1] - global_min[1]) / cube_width).floor() as usize).min(cubes_per_axis[1].saturating_sub(1));
         let x_end = (((max[0] - global_min[0]) / cube_width).floor() as usize).min(cubes_per_axis[0].saturating_sub(1));
 
+        // Check only the voxels in the AABB
         for z_index in z_start..=z_end {
             let z = global_max[2] - (cube_width * (z_index as f32) + cube_width * 0.5);
 
@@ -346,14 +359,23 @@ pub fn voxel_grid_from_triangles(mesh: Mesh, min_width: usize) -> Vec<Vec<Vec<u3
                 for x_index in x_start..=x_end {
                     let x = global_min[0] + (cube_width * (x_index as f32) + cube_width * 0.5);
                     if triangle_cube_intersection(vertecies, [x, y, z], cube_width * 0.5) {
-                        voxel_grid[z_index][y_index][x_index] = 2;
+                        voxel_grid[z_index][y_index][x_index].store(2, Ordering::Relaxed);
                     }
                 }
             }
         }
-    }
+    });
 
-    return voxel_grid;
+    // Convert voxel grid to use regular u32
+    let final_grid: Vec<Vec<Vec<u32>>> = voxel_grid.into_iter().map(|z_slice| {
+        z_slice.into_iter().map(|y_slice| {
+            y_slice.into_iter().map(|atomic_val| {
+                atomic_val.into_inner() // Extracts the raw u32
+            }).collect()
+        }).collect()
+    }).collect();
+
+    return final_grid;
 }
 
 #[cfg(test)]
