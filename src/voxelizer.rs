@@ -1,5 +1,6 @@
 use rand::{self, RngExt};
 use super::file_parser::{Mesh, Face};
+use rayon::prelude::*;
 
 /// Checks if any of a triangles vertecies are within a given box
 fn verticies_in_cube(vertecies: [[f32; 3]; 3], cube_center: [f32; 3], cube_width: f32) -> bool {
@@ -279,8 +280,8 @@ fn vertecies_from_mesh_face(mesh: &Mesh, face: &Face) -> [[f32; 3]; 3] {
 }
 
 pub fn voxel_grid_from_triangles(mesh: Mesh, min_width: usize) -> Vec<Vec<Vec<u32>>> {
-    let mut min = [f32::MAX; 3];
-    let mut max = [f32::MIN; 3];
+    let mut global_min = [f32::MAX; 3];
+    let mut global_max = [f32::MIN; 3];
 
     // Set min and max values for each axis
     for triangle in &mesh.faces {
@@ -290,19 +291,19 @@ pub fn voxel_grid_from_triangles(mesh: Mesh, min_width: usize) -> Vec<Vec<Vec<u3
             let y = vertex[1];
             let z = vertex[2];
 
-            if x < min[0] { min[0] = x; }
-            if x > max[0] { max[0] = x; }
+            if x < global_min[0] { global_min[0] = x; }
+            if x > global_max[0] { global_max[0] = x; }
 
-            if y < min[1] { min[1] = y; }
-            if y > max[1] { max[1] = y; }
+            if y < global_min[1] { global_min[1] = y; }
+            if y > global_max[1] { global_max[1] = y; }
 
-            if z < min[2] { min[2] = z; }
-            if z > max[2] { max[2] = z; }
+            if z < global_min[2] { global_min[2] = z; }
+            if z > global_max[2] { global_max[2] = z; }
         }
     };
 
     // Calculate the size and amount of cubes using the shortest axis and the 'min_width' argument 
-    let axis_width = [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
+    let axis_width = [global_max[0] - global_min[0], global_max[1] - global_min[1], global_max[2] - global_min[2]];
     let min_width_axis = axis_width.iter().zip([0, 1, 2]).reduce(|x, y| if x.0 < y.0 { x } else { y }).unwrap().1;
     let cube_width = axis_width[min_width_axis] / (min_width as f32);
     let cubes_per_axis: [usize; 3] = [
@@ -315,23 +316,37 @@ pub fn voxel_grid_from_triangles(mesh: Mesh, min_width: usize) -> Vec<Vec<Vec<u3
 
     let mut rng = rand::rng();
 
-    // Iterate over x,y,z and calculate the cube's position in the "triangle world"
-    for z_step in 0..cubes_per_axis[2] {
-        let z = max[2] - (cube_width * (z_step as f32) + cube_width * 0.5);
+    for triangle in &mesh.faces {
+        let vertecies = vertecies_from_mesh_face(&mesh, &triangle);
+        let max = [
+            vertecies[0][0].max(vertecies[1][0]).max(vertecies[2][0]),
+            vertecies[0][1].max(vertecies[1][1]).max(vertecies[2][1]),
+            vertecies[0][2].max(vertecies[1][2]).max(vertecies[2][2])
+        ];
+        let min = [
+            vertecies[0][0].min(vertecies[1][0]).min(vertecies[2][0]),
+            vertecies[0][1].min(vertecies[1][1]).min(vertecies[2][1]),
+            vertecies[0][2].min(vertecies[1][2]).min(vertecies[2][2])
+        ];
 
-        for y_step in 0..cubes_per_axis[1] {
-            let y = min[1] + (cube_width * (y_step as f32) + cube_width * 0.5);
+        let z_start = ((global_max[2] - max[2]) / cube_width).max(0.0).floor() as usize;
+        let y_start = ((min[1] - global_min[1]) / cube_width).max(0.0).floor() as usize;
+        let x_start = ((min[0] - global_min[0]) / cube_width).max(0.0).floor() as usize;
 
-            for x_step in 0..cubes_per_axis[0] {
-                let x = min[0] + (cube_width * (x_step as f32) + cube_width * 0.5);
+        let z_end = (((global_max[2] - min[2]) / cube_width).floor() as usize).min(cubes_per_axis[2].saturating_sub(1));
+        let y_end = (((max[1] - global_min[1]) / cube_width).floor() as usize).min(cubes_per_axis[1].saturating_sub(1));
+        let x_end = (((max[0] - global_min[0]) / cube_width).floor() as usize).min(cubes_per_axis[0].saturating_sub(1));
 
-                // Iterate over the triangles and check if any intersect with the cube 
-                for triangle in &mesh.faces {
-                    let vertecies = vertecies_from_mesh_face(&mesh, triangle);
+        for z_index in z_start..=z_end {
+            let z = global_max[2] - (cube_width * (z_index as f32) + cube_width * 0.5);
 
+            for y_index in y_start..=y_end {
+                let y = global_min[1] + (cube_width * (y_index as f32) + cube_width * 0.5);
+
+                for x_index in x_start..=x_end {
+                    let x = global_min[0] + (cube_width * (x_index as f32) + cube_width * 0.5);
                     if triangle_cube_intersection(vertecies, [x, y, z], cube_width * 0.5) {
-                        voxel_grid[z_step][y_step][x_step] = rng.random_range(1..=6); 
-                        break;
+                        voxel_grid[z_index][y_index][x_index] = 2;
                     }
                 }
             }
