@@ -9,10 +9,12 @@ mod vecmath;
 mod builder;
 mod worldgen;
 mod renderer;
+mod cli;
 mod state;
 
 use std::{collections::HashMap, f32::consts::FRAC_2_PI};
 use std::rc::Rc;
+use std::io::BufRead;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -29,6 +31,7 @@ use crate::octree::*;
 use crate::builder::*;
 use crate::renderer::*;
 use crate::state::*;
+use crate::cli::*;
 
 pub struct Player {
     pub position: V3,
@@ -139,7 +142,7 @@ impl Player {
     }
 }
 
-impl ApplicationHandler for App {
+impl ApplicationHandler<CliCommand> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         // Create window object
         let window = Arc::new(
@@ -306,33 +309,36 @@ impl ApplicationHandler for App {
             _ => (),
         }
     }
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, cmd: CliCommand) {
+        execute_cli_commands(self, event_loop, cmd);
+    }
 }
 
 fn main() {
     env_logger::init();
 
-    let event_loop = EventLoop::new().unwrap();
+    let event_loop: EventLoop<CliCommand> = EventLoop::with_user_event().build().unwrap();
+    let proxy = event_loop.create_proxy();
 
     event_loop.set_control_flow(ControlFlow::Poll);
+
+    std::thread::spawn(move || {
+        let stdin = std::io::stdin();
+
+        while let Some(Ok(line)) = stdin.lock().lines().next() {
+            match parse_command(&line) {
+                Some(cmd) => {
+                    if proxy.send_event(cmd).is_err() {
+                        break; 
+                    }
+                }
+                None => eprintln!("Unknown command: '{}'", line),
+            }
+        }
+    });
     
-    let mesh = file_parser::file_parse_interface("bugatti/bugatti.obj").unwrap().clone();
-
-    let mut colours: Vec<[f32; 4]> = vec![];
-
-    for color in &mesh.colors{
-        let translated_color = [color.x, color.y, color.z, 1.0];
-
-        colours.push(translated_color);
-    }
-
-    println!("{:?}", colours);
-
-    let world_data = voxelizer::voxel_grid_from_triangles(mesh, 10);
-
-    println!("Compressing world into Sparse Voxel Octrees...");
-    let chunks = to_chunks(&world_data);
-    println!("Successfully built {} chunks!", chunks.len());
-
+    let chunks = HashMap::new();
 
     let player = Player {
         position: V3{
