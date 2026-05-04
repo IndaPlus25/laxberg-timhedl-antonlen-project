@@ -98,6 +98,9 @@ impl ObjParser {
         let mut current_material = String::new(); 
         let mut current_material_id = self.colors.len();
 
+        let gamma: f32 = 2.2;
+        let inverse_gamma = 1.0 / gamma;
+
         for line_result in reader.lines() {
             let line = line_result?;
             
@@ -108,7 +111,13 @@ impl ObjParser {
 
                     match self.parse_vertices(color) {
                         Ok(v) => {
-                            colors.push(v);
+                            let color = Vertex {
+                                x: v.x.powf(inverse_gamma),
+                                y: v.y.powf(inverse_gamma),
+                                z: v.z.powf(inverse_gamma),
+                            };
+
+                            colors.push(color);
                             color_hash.insert(current_material.clone(), current_material_id);
 
                             current_material_id += 1;
