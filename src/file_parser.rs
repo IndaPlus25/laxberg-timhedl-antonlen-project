@@ -96,7 +96,7 @@ impl ObjParser {
         let mut colors: Vec<Vertex> = Vec::new();
         let mut color_hash: HashMap<String, usize> = HashMap::new();
         let mut current_material = String::new(); 
-        let mut current_material_id = 2;
+        let mut current_material_id = self.colors.len();
 
         for line_result in reader.lines() {
             let line = line_result?;
