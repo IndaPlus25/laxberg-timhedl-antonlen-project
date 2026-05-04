@@ -39,6 +39,14 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
                 },
             };
 
+            let mut colors: Vec<[f32; 4]> = Vec::new();
+
+            for color in &mesh.colors {
+                colors.push([color.x, color.y, color.z, 1.0]);
+            }
+
+            app.colours = colors;
+
             println!("Translating points to voxel geometry...");
             let world_data = voxelizer::voxel_grid_from_triangles(mesh, min_width);
 
