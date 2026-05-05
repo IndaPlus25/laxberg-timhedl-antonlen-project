@@ -178,6 +178,8 @@ impl ApplicationHandler<CliCommand> for App {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
+                state.process_chunk_loading(&self.player, self.render_distance, &self.chunks);
+
                 state.render(&self.player, self.render_distance, &self.colours, &self.lighting);
                 // Emits a new redraw requested event.
                 state.get_window().request_redraw();
@@ -198,9 +200,15 @@ impl ApplicationHandler<CliCommand> for App {
                 //=============================
 
                 let delta_time = Instant::now().duration_since(self.last_redraw).as_secs_f32();
-                let move_speed = 10.0;
+                let mut move_speed = 10.0;
                 let rot_speed = std::f32::consts::FRAC_PI_2 * 1.5;
                 self.last_redraw = Instant::now();
+
+                // Shift
+                if self.key_presses.Shift {
+                    move_speed *= 10.0;
+                }
+
 
                 // WASD movement
                 if self.key_presses.W {
@@ -224,6 +232,7 @@ impl ApplicationHandler<CliCommand> for App {
                     self.player.move_down(move_speed * delta_time);
                 }
 
+
                 if self.key_presses.Up {
                     self.player.rotate_pitch(rot_speed * delta_time);
                 }
@@ -236,6 +245,8 @@ impl ApplicationHandler<CliCommand> for App {
                 if self.key_presses.Right {
                     self.player.rotate_yaw(rot_speed * delta_time);
                 }
+
+            
             }
             WindowEvent::Resized(size) => {
                 // Reconfigures the size of the surface. We do not re-render
@@ -339,18 +350,16 @@ fn main() {
         }
     });
 
-    let world_data = generate_random_world(32*8, 32*8, 32*8, 1.0, 1);
-    
-    let chunks = to_chunks(&world_data);
+    let chunks = HashMap::new();
 
     let player = Player {
         position: V3{
-            x: 32.0*8.0,
-            y: 32.0*18.0,
-            z: 32.0*8.0,
+            x: 32.0*2.0,
+            y: 32.0*2.0,
+            z: 32.0*2.0,
         },
-        direction: (0.0, -std::f32::consts::FRAC_PI_2)               
-        //direction: (std::f32::consts::FRAC_PI_3, 0.0)               
+        //direction: (0.0, -std::f32::consts::FRAC_PI_2)               
+        direction: (std::f32::consts::FRAC_PI_3, 0.0)               
     };
 
     let colours: Vec<[f32; 4]> = vec![

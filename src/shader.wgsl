@@ -415,7 +415,7 @@ fn get_chunk_root_pointer(chunk_pos: vec3<i32>, render_radius: i32, render_diame
     let dist_y = abs(chunk_pos.y - cam_chunk.y);
     let dist_z = abs(chunk_pos.z - cam_chunk.z);
 
-    if (dist_x > render_radius || dist_y > render_radius || dist_z > render_radius) {
+    if (dist_x >= render_radius || dist_y >= render_radius || dist_z >= render_radius) {
         return 0xFFFFFFFFu; 
     }
 
@@ -634,9 +634,9 @@ fn calculate_smooth_voxel_ao(hit_pos: vec3<f32>, hit_normal: vec3<f32>, render_r
     let l2_hit = (mask & (1u << 9u)) != 0u;
     let l3_hit = (mask & (1u << 10u)) != 0u;
 
-    if (l1_hit) { occlusion += 0.8; } 
-    else if (l2_hit) { occlusion += 0.5; } 
-    else if (l3_hit) { occlusion += 0.2; }
+    if (l1_hit) { occlusion += 0.5; } 
+    else if (l2_hit) { occlusion += 0.3; } 
+    else if (l3_hit) { occlusion += 0.15; }
 
     // 2. Evaluate Layer 0 (The 8 neighbors wrapping the face)
     
