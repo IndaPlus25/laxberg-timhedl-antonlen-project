@@ -359,7 +359,7 @@ pub fn voxel_grid_from_triangles(mesh: Mesh, min_width: usize) -> Vec<Vec<Vec<u3
                 for x_index in x_start..=x_end {
                     let x = global_min[0] + (cube_width * (x_index as f32) + cube_width * 0.5);
                     if triangle_cube_intersection(vertecies, [x, y, z], cube_width * 0.5) {
-                        voxel_grid[z_index][y_index][x_index].store(2, Ordering::Relaxed);
+                        voxel_grid[z_index][y_index][x_index].store(triangle.color_id as u32, Ordering::Relaxed);
                     }
                 }
             }

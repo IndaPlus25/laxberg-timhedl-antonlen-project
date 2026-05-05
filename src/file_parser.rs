@@ -1,6 +1,9 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Error, ErrorKind};
 use std::path::{Path};
+
+const DEFAULT_COLOR: Vertex = Vertex {x: 1.0, y: 1.0, z: 1.0};
 
 use crate::error::{FileParseError};
 
@@ -16,18 +19,20 @@ pub struct Face {
     pub v1: usize,
     pub v2: usize,
     pub v3: usize,
+    pub color_id: usize
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub faces: Vec<Face>,
+    pub colors: Vec<Vertex>
 }
 
 trait FileFormat{
-    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Result<Mesh, FileParseError>;
+    fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError>;
 
-    fn parse_line(&mut self, line_result: Result<String, Error>) -> Result<(), FileParseError>; 
+    fn parse_line(&mut self, line_result: Result<String, Error>, folder: Option<&Path>) -> Result<(), FileParseError>; 
 
     fn parse_vertices(&self, coordinates: &str) -> Result<Vertex, FileParseError>;
 
@@ -37,6 +42,9 @@ trait FileFormat{
 struct ObjParser{
     vertices: Vec<Vertex>,
     faces: Vec<Face>,
+    colors: Vec<Vertex>, 
+    color_translator: HashMap<String, usize>,
+    current_color: String,
 }
 
 impl ObjParser {
@@ -44,6 +52,9 @@ impl ObjParser {
         Self {
             vertices: vec![],
             faces: vec![],
+            colors: vec![DEFAULT_COLOR, DEFAULT_COLOR],
+            current_color: String::new(),
+            color_translator: HashMap::new(),
         }
     }
 
@@ -78,12 +89,56 @@ impl ObjParser {
 
         Ok(coordinate)
     }
+
+    fn parse_color_file(&mut self, file: &File) -> Result<HashMap<String, usize>, FileParseError>{
+        let reader = BufReader::new(file);
+
+        let mut colors: Vec<Vertex> = Vec::new();
+        let mut color_hash: HashMap<String, usize> = HashMap::new();
+        let mut current_material = String::new(); 
+        let mut current_material_id = self.colors.len();
+
+        let gamma: f32 = 2.2;
+        let inverse_gamma = 1.0 / gamma;
+
+        for line_result in reader.lines() {
+            let line = line_result?;
+            
+            match line.to_lowercase() {
+                x if x.starts_with("newmtl ") => current_material = x[7..].trim().to_owned(),
+                x if x.starts_with("kd ") => {
+                    let color = x[3..].trim();
+
+                    match self.parse_vertices(color) {
+                        Ok(v) => {
+                            let color = Vertex {
+                                x: v.x.powf(inverse_gamma),
+                                y: v.y.powf(inverse_gamma),
+                                z: v.z.powf(inverse_gamma),
+                            };
+
+                            colors.push(color);
+                            color_hash.insert(current_material.clone(), current_material_id);
+
+                            current_material_id += 1;
+                        },
+                        Err(e) => {return Err(e);}
+                    }
+                },
+                _ => {}
+            }
+        }
+
+        self.colors.append(&mut colors); 
+
+        Ok(color_hash)
+    }
 }
 
 impl FileFormat for ObjParser { 
-    fn handle_input(&mut self, reader: &mut BufReader<File>) -> Result<Mesh, FileParseError> {
+    fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError> {
         for (i, line_result) in reader.lines().enumerate(){
-            match self.parse_line(line_result) {
+            match self.parse_line(line_result, folder) {
                 Ok(_) => {},
                 Err(error) => {return Err(FileParseError::FailedLineParse(i, Box::new(error)));}
             }
@@ -92,12 +147,13 @@ impl FileFormat for ObjParser {
         let mesh = Mesh {
             vertices: std::mem::take(&mut self.vertices),
             faces: std::mem::take(&mut self.faces),
+            colors: std::mem::take(&mut self.colors),
         };
 
         Ok(mesh)
     }
 
-    fn parse_line(&mut self, line_result: Result<String, Error>) -> Result<(), FileParseError> {
+    fn parse_line(&mut self, line_result: Result<String, Error>, folder: Option<&Path>) -> Result<(), FileParseError> {
         let line = line_result?;
         let trimmed_line = line.trim();
 
@@ -118,6 +174,30 @@ impl FileFormat for ObjParser {
                     Err(e) => {return Err(e);}
                 }
             },
+            x if x.starts_with("mtllib ") => {
+                let color_scheme_path = x[7..].trim();
+
+                if let Some(folder_path) = folder{
+                    let full_path = folder_path.join(color_scheme_path);
+
+                    let color_file = match File::open(full_path){
+                        Ok(file) => file,
+                        Err(_) => return Ok(()),
+                    };
+
+                    match self.parse_color_file(&color_file){
+                        Ok(color_hash) => self.color_translator = color_hash,
+                        Err(_) => {
+                            return Ok(())
+                        },
+                    };
+
+                    println!("{:?}", self.color_translator)
+                }
+            },
+            x if x.starts_with("usemtl ") => {
+                self.current_color = x[7..].trim().to_string();
+            }
             _ => {},
         }
 
@@ -141,18 +221,23 @@ impl FileFormat for ObjParser {
         let b = ObjParser::parse_face_obj_format(parts.next())?;
         let c = ObjParser::parse_face_obj_format(parts.next())?;
 
+        let color = match self.color_translator.get(&self.current_color) {
+            Some(color) => color,
+            None => &1,
+        };
+
         match ObjParser::parse_face_obj_format(parts.next()) {
             Ok(d) => {
                 return Ok(vec![
-                    Face {v1: a, v2: b, v3: c},
-                    Face {v1: a, v2: c, v3: d},   
+                    Face {v1: a, v2: b, v3: c, color_id: color.clone()},
+                    Face {v1: a, v2: c, v3: d, color_id: color.clone()},   
                 ])
             }
             Err(_) => {}
         };
 
         Ok(vec![
-            Face {v1: a, v2: b, v3: c}
+            Face {v1: a, v2: b, v3: c, color_id: color.clone()}
         ])
     }
 
@@ -173,6 +258,7 @@ fn get_file_format(path: &Path) -> Result<Box<dyn FileFormat>, FileParseError>{
 
 fn parse_file(filename: &str) -> Result<Mesh, FileParseError> {
     let path = Path::new(filename);
+    let folder = path.parent();
 
     let file = File::open(&path)?;
 
@@ -180,7 +266,7 @@ fn parse_file(filename: &str) -> Result<Mesh, FileParseError> {
 
     let mut formatter =  get_file_format(path)?;
 
-    let object = match formatter.handle_input(&mut reader){
+    let object = match formatter.handle_input(&mut reader, folder){
         Ok(object) => {object},
         Err(e) => {return Err(e);}
     };
@@ -197,6 +283,7 @@ fn parse_file(filename: &str) -> Result<Mesh, FileParseError> {
 pub fn file_parse_interface(filename: &str) -> Result<Mesh, FileParseError> {
     parse_file(filename)
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -270,47 +357,47 @@ mod tests {
         let faces = vec![
             // o alights.014_Plane.051
             // f 1//1 2//1 4//1 3//1
-            Face { v1: 0, v2: 1, v3: 3 },
-            Face { v1: 0, v2: 3, v3: 2 },
+            Face { v1: 0, v2: 1, v3: 3, color_id: 1},
+            Face { v1: 0, v2: 3, v3: 2, color_id: 1},
 
             // o alights.000_Plane.049
             // f 5//2 6//2 8//2 7//2
-            Face { v1: 4, v2: 5, v3: 7 },
-            Face { v1: 4, v2: 7, v3: 6 },
+            Face { v1: 4, v2: 5, v3: 7, color_id: 1},
+            Face { v1: 4, v2: 7, v3: 6, color_id: 1},
 
             // o alights.015_Plane.050
             // f 9//3 10//3 12//3 11//3
-            Face { v1: 8, v2: 9, v3: 11 },
-            Face { v1: 8, v2: 11, v3: 10 },
+            Face { v1: 8, v2: 9, v3: 11, color_id: 1},
+            Face { v1: 8, v2: 11, v3: 10, color_id: 1},
 
             // f 13//3 14//3 16//3 15//3
-            Face { v1: 12, v2: 13, v3: 15 },
-            Face { v1: 12, v2: 15, v3: 14 },
+            Face { v1: 12, v2: 13, v3: 15, color_id: 1},
+            Face { v1: 12, v2: 15, v3: 14, color_id: 1},
 
             // f 17//3 18//3 20//3 19//3
-            Face { v1: 16, v2: 17, v3: 19 },
-            Face { v1: 16, v2: 19, v3: 18 },
+            Face { v1: 16, v2: 17, v3: 19, color_id: 1},
+            Face { v1: 16, v2: 19, v3: 18, color_id: 1},
 
             // f 21//3 22//3 24//3 23//3
-            Face { v1: 20, v2: 21, v3: 23 },
-            Face { v1: 20, v2: 23, v3: 22 },
+            Face { v1: 20, v2: 21, v3: 23, color_id: 1},
+            Face { v1: 20, v2: 23, v3: 22, color_id: 1},
 
             // f 25//3 26//3 28//3 27//3
-            Face { v1: 24, v2: 25, v3: 27 },
-            Face { v1: 24, v2: 27, v3: 26 },
+            Face { v1: 24, v2: 25, v3: 27, color_id: 1},
+            Face { v1: 24, v2: 27, v3: 26, color_id: 1},
 
             // f 29//3 30//3 32//3 31//3
-            Face { v1: 28, v2: 29, v3: 31 },
-            Face { v1: 28, v2: 31, v3: 30 },
+            Face { v1: 28, v2: 29, v3: 31, color_id: 1},
+            Face { v1: 28, v2: 31, v3: 30, color_id: 1},
 
             // f 33//3 34//3 36//3 35//3
-            Face { v1: 32, v2: 33, v3: 35 },
-            Face { v1: 32, v2: 35, v3: 34 },
+            Face { v1: 32, v2: 33, v3: 35, color_id: 1},
+            Face { v1: 32, v2: 35, v3: 34, color_id: 1},
 
             // o o Plane.047_Plane.042
             // f 37//4 38//4 40//4 39//4
-            Face { v1: 36, v2: 37, v3: 39 },
-            Face { v1: 36, v2: 39, v3: 38 },
+            Face { v1: 36, v2: 37, v3: 39, color_id: 1},
+            Face { v1: 36, v2: 39, v3: 38, color_id: 1},
         ];
 
         assert_eq!(faces, mesh.faces)
@@ -370,27 +457,28 @@ mod tests {
                 Vertex { x: -28.859720, y: 12.516749, z: 9.240364 },
             ],
             faces: vec![
-                Face { v1: 0, v2: 1, v3: 3 },
-                Face { v1: 0, v2: 3, v3: 2 },
-                Face { v1: 4, v2: 5, v3: 7 },
-                Face { v1: 4, v2: 7, v3: 6 },
-                Face { v1: 8, v2: 9, v3: 11 },
-                Face { v1: 8, v2: 11, v3: 10 },
-                Face { v1: 12, v2: 13, v3: 15 },
-                Face { v1: 12, v2: 15, v3: 14 },
-                Face { v1: 16, v2: 17, v3: 19 },
-                Face { v1: 16, v2: 19, v3: 18 },
-                Face { v1: 20, v2: 21, v3: 23 },
-                Face { v1: 20, v2: 23, v3: 22 },
-                Face { v1: 24, v2: 25, v3: 27 },
-                Face { v1: 24, v2: 27, v3: 26 },
-                Face { v1: 28, v2: 29, v3: 31 },
-                Face { v1: 28, v2: 31, v3: 30 },
-                Face { v1: 32, v2: 33, v3: 35 },
-                Face { v1: 32, v2: 35, v3: 34 },
-                Face { v1: 36, v2: 37, v3: 39 },
-                Face { v1: 36, v2: 39, v3: 38 },
+                Face { v1: 0, v2: 1, v3: 3, color_id: 1},
+                Face { v1: 0, v2: 3, v3: 2, color_id: 1},
+                Face { v1: 4, v2: 5, v3: 7, color_id: 1},
+                Face { v1: 4, v2: 7, v3: 6, color_id: 1},
+                Face { v1: 8, v2: 9, v3: 11, color_id: 1 },
+                Face { v1: 8, v2: 11, v3: 10, color_id: 1},
+                Face { v1: 12, v2: 13, v3: 15, color_id: 1},
+                Face { v1: 12, v2: 15, v3: 14, color_id: 1},
+                Face { v1: 16, v2: 17, v3: 19, color_id: 1},
+                Face { v1: 16, v2: 19, v3: 18, color_id: 1},
+                Face { v1: 20, v2: 21, v3: 23, color_id: 1},
+                Face { v1: 20, v2: 23, v3: 22, color_id: 1},
+                Face { v1: 24, v2: 25, v3: 27, color_id: 1},
+                Face { v1: 24, v2: 27, v3: 26, color_id: 1},
+                Face { v1: 28, v2: 29, v3: 31, color_id: 1},
+                Face { v1: 28, v2: 31, v3: 30, color_id: 1},
+                Face { v1: 32, v2: 33, v3: 35, color_id: 1},
+                Face { v1: 32, v2: 35, v3: 34, color_id: 1},
+                Face { v1: 36, v2: 37, v3: 39, color_id: 1},
+                Face { v1: 36, v2: 39, v3: 38, color_id: 1},
             ],
+            colors: vec![DEFAULT_COLOR, DEFAULT_COLOR],
         };
 
         assert_eq!(mesh, expected_mesh)
