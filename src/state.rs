@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 use winit::{
     event_loop::{OwnedDisplayHandle},
@@ -8,6 +9,7 @@ use winit::{
 use crate::renderer::render_starter;
 use crate::{Player, Lighting};
 use crate::vecmath::*;
+use crate::octree::*;
 
 
 #[repr(C)]
@@ -42,6 +44,10 @@ pub struct State {
     pub surface: wgpu::Surface<'static>,
     pub surface_format: wgpu::TextureFormat,
 
+    pub allocator: VoxelHeapAllocator,
+    pub active_chunks: HashMap<V3i, ChunkAllocation>,
+    pub grid_size: u32,
+
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub ray_start_pipeline: wgpu::ComputePipeline,
     pub shading_pipeline: wgpu::ComputePipeline,
@@ -51,6 +57,48 @@ pub struct State {
     pub world_buffer: wgpu::Buffer,
     pub color_buffer: wgpu::Buffer,
     pub light_buffer: wgpu::Buffer,
+}
+
+// Represents an active chunk stored on the GPU
+pub struct ChunkAllocation {
+    pub start_idx: u32,
+    pub length: u32,
+}
+
+pub struct VoxelHeapAllocator {
+    pub free_blocks: Vec<(u32, u32)>, 
+    pub capacity: u32,
+}
+
+impl VoxelHeapAllocator {
+    pub fn new(start_offset: u32, capacity: u32) -> Self {
+        Self {
+            free_blocks: vec![(start_offset, capacity - start_offset)],
+            capacity,
+        }
+    }
+
+    pub fn allocate(&mut self, size: u32) -> Option<u32> {
+        if let Some(idx) = self.free_blocks.iter().position(|block| block.1 >= size) {
+            let block = self.free_blocks[idx];
+            let allocated_start = block.0;
+
+            if block.1 == size {
+                self.free_blocks.remove(idx);
+            } else {
+                self.free_blocks[idx] = (block.0 + size, block.1 - size);
+            }
+            return Some(allocated_start);
+        }
+        //No more Vram
+        None 
+    }
+
+    pub fn free(&mut self, start: u32, size: u32) {
+        self.free_blocks.push((start, size));
+        // Implement a merge function here to combine adjacent free blocks 
+        // to prevent fragmentation over time.
+    }
 }
 
 impl State {
@@ -64,11 +112,30 @@ impl State {
             .request_adapter(&wgpu::RequestAdapterOptions::default())
             .await
             .unwrap();
+
+
+        let supported_limits = adapter.limits();
+        let absolute_max_buffer = supported_limits.max_storage_buffer_binding_size as u64;
+
+        //four gb limit
+        let four_gb_in_bytes: u64 = 4 * 1024 * 1024 * 1024;
+
+        let target_buffer_bytes = absolute_max_buffer.min(four_gb_in_bytes);
+        let final_buffer_bytes = target_buffer_bytes & !3;
+
+        let max_u32_elements = (final_buffer_bytes / 4) as u32;
+        println!("Allocating a Voxel Heap of {} MB", final_buffer_bytes / 1024 / 1024);
+
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
                     required_features: wgpu::Features::BGRA8UNORM_STORAGE,
+                    required_limits: wgpu::Limits {
+                        max_storage_buffer_binding_size: final_buffer_bytes,
+                        max_buffer_size: final_buffer_bytes,
+                        ..wgpu::Limits::default()
+                    },
                     ..Default::default()
                 }
             )
@@ -101,6 +168,9 @@ impl State {
             sky_color: [0.0, 0.0, 0.0, 1.0],
         };
 
+        let grid_size = render_distance * 2;
+        let indexer_size = grid_size * grid_size * grid_size;
+
         let pixel_count = (size.width * size.height) as wgpu::BufferAddress;
 
         let hit_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -122,10 +192,11 @@ impl State {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let world_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("World Storage Buffer"),
-            contents: bytemuck::cast_slice(gpu_world_data),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        let world_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("World Storage Buffer (Dynamic)"),
+            size: (final_buffer_bytes) as wgpu::BufferAddress, 
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, 
+            mapped_at_creation: false,
         });
 
         let color_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -134,6 +205,11 @@ impl State {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+
+        let allocator = VoxelHeapAllocator::new(indexer_size, max_u32_elements);
+
+        let empty_indexer = vec![0xFFFFFFFFu32; indexer_size as usize];
+        queue.write_buffer(&world_buffer, 0, bytemuck::cast_slice(&empty_indexer));
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Main Bind Group Layout"),
@@ -252,6 +328,72 @@ impl State {
 
         state.configure_surface();
         state
+    }
+
+    pub fn set_chunk(&mut self, chunk_pos: V3i, data: Option<&[u32]>) {
+        let local_x = chunk_pos.x.rem_euclid(self.grid_size as i32) as u32;
+        let local_y = chunk_pos.y.rem_euclid(self.grid_size as i32) as u32;
+        let local_z = chunk_pos.z.rem_euclid(self.grid_size as i32) as u32;
+        
+        let morton_idx = crate::builder::get_morton_index(local_x, local_y, local_z);  
+        let indexer_byte_offset = (morton_idx as u64) * 4;
+
+        if let Some(allocation) = self.active_chunks.remove(&chunk_pos) {
+            self.allocator.free(allocation.start_idx, allocation.length);
+        }
+
+        if let Some(svo_data) = data {
+            let ptr = self.allocator.allocate(svo_data.len() as u32)
+                .expect("CRITICAL: Out of GPU Voxel Heap space");
+
+            let heap_byte_offset = (ptr as u64) * 4;
+            self.queue.write_buffer(&self.world_buffer, heap_byte_offset, bytemuck::cast_slice(svo_data));
+
+            self.queue.write_buffer(&self.world_buffer, indexer_byte_offset, bytemuck::cast_slice(&[ptr]));
+
+            self.active_chunks.insert(chunk_pos, ChunkAllocation {
+                start_idx: ptr,
+                length: svo_data.len() as u32,
+            });
+        } else {
+            self.queue.write_buffer(&self.world_buffer, indexer_byte_offset, bytemuck::cast_slice(&[0xFFFFFFFFu32]));
+        }
+    }
+
+    pub fn process_chunk_loading(&mut self, player_pos: &crate::Player, render_distance: u32, all_world_chunks: &HashMap<V3i, Chunk>) {
+        let chunk_size = 32.0;
+        let center_cx = (player_pos.position.x / chunk_size).floor() as i32;
+        let center_cy = (player_pos.position.y / chunk_size).floor() as i32;
+        let center_cz = (player_pos.position.z / chunk_size).floor() as i32;
+
+        let radius = render_distance as i32;
+
+        // 1. Unload chunks that are now too far away
+        let mut to_remove = Vec::new();
+        for pos in self.active_chunks.keys() {
+            if (pos.x - center_cx).abs() > radius || 
+               (pos.y - center_cy).abs() > radius || 
+               (pos.z - center_cz).abs() > radius {
+                to_remove.push(*pos);
+            }
+        }
+
+        for pos in to_remove {
+            self.set_chunk(pos, None);         }
+
+        for x in -radius..=radius {
+            for y in -radius..=radius {
+                for z in -radius..=radius {
+                    let target_pos = V3i { x: center_cx + x, y: center_cy + y, z: center_cz + z };
+                    
+                    if !self.active_chunks.contains_key(&target_pos) {
+                        if let Some(chunk) = all_world_chunks.get(&target_pos) {
+                            self.set_chunk(target_pos, Some(&chunk.data));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub fn get_window(&self) -> &Window {
