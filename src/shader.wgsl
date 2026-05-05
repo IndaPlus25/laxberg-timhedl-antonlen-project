@@ -409,26 +409,31 @@ fn expand_bits(v: u32) -> u32 {
     return x;
 }
 
-fn get_chunk_root_pointer(chunk_pos: vec3<i32>, offset: i32, grid_size: i32) -> u32 {
-    let gx = chunk_pos.x + offset;
-    let gy = chunk_pos.y + offset;
-    let gz = chunk_pos.z + offset;
-    
-    if (gx >= 0 && gx < grid_size && gy >= 0 && gy < grid_size && gz >= 0 && gz < grid_size) {
-        
-        let morton_x = expand_bits(u32(gx));
-        let morton_y = expand_bits(u32(gy));
-        let morton_z = expand_bits(u32(gz));
-        
-        let grid_index = morton_x | (morton_y << 1u) | (morton_z << 2u);
-        
-        return world_data[grid_index];
+fn get_chunk_root_pointer(chunk_pos: vec3<i32>, render_radius: i32, render_diameter: i32) -> u32 {
+    let cam_chunk = vec3<i32>(floor(camera.position / 32.0));
+    let dist_x = abs(chunk_pos.x - cam_chunk.x);
+    let dist_y = abs(chunk_pos.y - cam_chunk.y);
+    let dist_z = abs(chunk_pos.z - cam_chunk.z);
+
+    if (dist_x > render_radius || dist_y > render_radius || dist_z > render_radius) {
+        return 0xFFFFFFFFu; 
     }
+
+    var local_pos = chunk_pos % vec3<i32>(render_diameter);
+    if (local_pos.x < 0) { local_pos.x += render_diameter; }
+    if (local_pos.y < 0) { local_pos.y += render_diameter; }
+    if (local_pos.z < 0) { local_pos.z += render_diameter; }
     
-    return 0xFFFFFFFFu;
+    let morton_x = expand_bits(u32(local_pos.x));
+    let morton_y = expand_bits(u32(local_pos.y));
+    let morton_z = expand_bits(u32(local_pos.z));
+    
+    let grid_index = morton_x | (morton_y << 1u) | (morton_z << 2u);
+    
+    return world_data[grid_index];
 }
 
-fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: ptr<function, u32>, out_pos: ptr<function, vec3<f32>>, out_normal: ptr<function, vec3<f32>> , offset: i32, render_diameter: i32) -> bool {
+fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: ptr<function, u32>, out_pos: ptr<function, vec3<f32>>, out_normal: ptr<function, vec3<f32>>, render_radius: i32, render_diameter: i32) -> bool {
     let chunk_size = 32.0;
     var chunk_pos = vec3<i32>(floor(origin / chunk_size));
     
@@ -474,7 +479,7 @@ fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: pt
 
     // DDA LOOPEN
     for (var i = 0u; i < limit; i++) {
-        let chunk_root_ptr = get_chunk_root_pointer(chunk_pos, offset, render_diameter);
+        let chunk_root_ptr = get_chunk_root_pointer(chunk_pos, render_radius, render_diameter);
         
         if (chunk_root_ptr != 0xFFFFFFFFu) {
             let chunk_min = vec3<f32>(chunk_pos) * chunk_size;
@@ -498,7 +503,7 @@ fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: pt
     return false;
 }
 
-fn cast_ray_anyhit(origin: vec3<f32>, direction: vec3<f32>, limit: u32, offset: i32, render_diameter: i32) -> bool {
+fn cast_ray_anyhit(origin: vec3<f32>, direction: vec3<f32>, limit: u32, render_radius: i32, render_diameter: i32) -> bool {
     let chunk_size = 32.0;
     var chunk_pos = vec3<i32>(floor(origin / chunk_size));
     
@@ -539,7 +544,7 @@ fn cast_ray_anyhit(origin: vec3<f32>, direction: vec3<f32>, limit: u32, offset: 
     }
     
     for (var i = 0u; i < limit; i++) {
-        let chunk_root_ptr = get_chunk_root_pointer(chunk_pos, offset, render_diameter);
+        let chunk_root_ptr = get_chunk_root_pointer(chunk_pos, render_radius, render_diameter);
         if (chunk_root_ptr != 0xFFFFFFFFu) {
             let chunk_min = vec3<f32>(chunk_pos) * chunk_size;
             let chunk_max = chunk_min + vec3<f32>(chunk_size);

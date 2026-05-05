@@ -324,6 +324,9 @@ impl State {
             world_buffer,
             color_buffer,
             light_buffer,
+            allocator,
+            active_chunks: HashMap::new(),
+            grid_size,
         };
 
         state.configure_surface();
@@ -344,7 +347,7 @@ impl State {
 
         if let Some(svo_data) = data {
             let ptr = self.allocator.allocate(svo_data.len() as u32)
-                .expect("CRITICAL: Out of GPU Voxel Heap space");
+                .expect("CRITICAL: Out of VRAM");
 
             let heap_byte_offset = (ptr as u64) * 4;
             self.queue.write_buffer(&self.world_buffer, heap_byte_offset, bytemuck::cast_slice(svo_data));
