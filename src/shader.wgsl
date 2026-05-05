@@ -561,6 +561,169 @@ fn cast_ray_anyhit(origin: vec3<f32>, direction: vec3<f32>, limit: u32, offset: 
 }
 
 // ==========================================
+// Specific voxel checks
+// ==========================================
+
+// Extremely fast top-down point query. Bypasses DDA entirely.
+fn is_voxel_solid(pos: vec3<f32>, render_radius: i32) -> bool {
+    let chunk_size = 32.0;
+    let chunk_pos = vec3<i32>(floor(pos / chunk_size));
+    let render_diameter = render_radius * 2;
+
+    // 1. Find the chunk root pointer
+    let root_ptr = get_chunk_root_pointer(chunk_pos, render_radius, render_diameter);
+    if (root_ptr == 0xFFFFFFFFu) { return false; } // Chunk doesn't exist
+
+    var current_node = world_data[root_ptr];
+    var current_min = vec3<f32>(chunk_pos) * chunk_size;
+    var current_size = chunk_size;
+
+    // 2. Traverse down the 5 levels of the SVO
+    for (var level = 0u; level < 6u; level++) {
+        current_size *= 0.5;
+        let center = current_min + vec3<f32>(current_size);
+
+        // Determine which of the 8 octants the point is in
+        var sub_index = 0u;
+        if (pos.x >= center.x) { sub_index |= 1u; current_min.x = center.x; }
+        if (pos.y >= center.y) { sub_index |= 2u; current_min.y = center.y; }
+        if (pos.z >= center.z) { sub_index |= 4u; current_min.z = center.z; }
+
+        // If the child is air, the point is empty
+        if (!has_child(current_node, sub_index)) { return false; }
+
+        // Move down the tree
+        let pointer = get_ending(current_node);
+        let child_idx = pointer + child_pop_count(current_node, sub_index);
+        let child_node = world_data[root_ptr + child_idx];
+
+        // If we hit a leaf before the bottom, it's a solid block
+        if (is_leaf(current_node, sub_index)) { return true; }
+        
+        current_node = child_node;
+    }
+    
+    return false;
+}
+
+// ==========================================
+// AMBIENT OCCLUSION
+// ==========================================
+
+// Unpacks the boolean mask and calculates true physical distances
+fn calculate_smooth_voxel_ao(hit_pos: vec3<f32>, hit_normal: vec3<f32>, render_radius: i32) -> f32 {
+    let block_pos = floor(hit_pos - (hit_normal * 0.005));
+    let face_center = block_pos + vec3<f32>(0.5) + (hit_normal * 0.5);
+    
+    let mask = get_neighborhood_mask(face_center, hit_normal, render_radius);
+    
+    var up = vec3<f32>(0.0, 1.0, 0.0);
+    if (abs(hit_normal.y) > 0.9) { up = vec3<f32>(1.0, 0.0, 0.0); }
+    let right = normalize(cross(hit_normal, up));
+    let top = cross(right, hit_normal);
+
+    var occlusion: f32 = 0.0;
+
+    // 1. Evaluate the "Straight Out" path (Bits 8, 9, 10)
+    let l1_hit = (mask & (1u << 8u)) != 0u;
+    let l2_hit = (mask & (1u << 9u)) != 0u;
+    let l3_hit = (mask & (1u << 10u)) != 0u;
+
+    if (l1_hit) { occlusion += 0.8; } 
+    else if (l2_hit) { occlusion += 0.5; } 
+    else if (l3_hit) { occlusion += 0.2; }
+
+    // 2. Evaluate Layer 0 (The 8 neighbors wrapping the face)
+    
+    // Extract the Cardinal (Cross) neighbors
+    let tc = (mask & (1u << 1u)) != 0u; // Top-Center
+    let ml = (mask & (1u << 3u)) != 0u; // Mid-Left
+    let mr = (mask & (1u << 4u)) != 0u; // Mid-Right
+    let bc = (mask & (1u << 6u)) != 0u; // Bot-Center
+
+    // Apply the Anti-Light-Leak rule to the Diagonals
+    let eff_states = array<bool, 8>(
+        ((mask & (1u << 0u)) != 0u) || (tc && ml), // 0: Top-Left (Blocked if Top & Left are solid)
+        tc,                                        // 1: Top-Center
+        ((mask & (1u << 2u)) != 0u) || (tc && mr), // 2: Top-Right (Blocked if Top & Right are solid)
+        ml,                                        // 3: Mid-Left
+        mr,                                        // 4: Mid-Right
+        ((mask & (1u << 5u)) != 0u) || (bc && ml), // 5: Bot-Left (Blocked if Bot & Left are solid)
+        bc,                                        // 6: Bot-Center
+        ((mask & (1u << 7u)) != 0u) || (bc && mr)  // 7: Bot-Right (Blocked if Bot & Right are solid)
+    );
+
+    let l0_offsets = array<vec3<f32>, 8>(
+        vec3<f32>(-1.0,  1.0, 0.0), vec3<f32>(0.0,  1.0, 0.0), vec3<f32>(1.0,  1.0, 0.0),
+        vec3<f32>(-1.0,  0.0, 0.0),                            vec3<f32>(1.0,  0.0, 0.0),
+        vec3<f32>(-1.0, -1.0, 0.0), vec3<f32>(0.0, -1.0, 0.0), vec3<f32>(1.0, -1.0, 0.0)
+    );
+
+    for (var i = 0u; i < 8u; i++) {
+        // We use the effective state instead of checking the raw mask again
+        if (eff_states[i]) {
+            let local_offset = l0_offsets[i];
+            let neighbor_center = face_center + (right * local_offset.x) + (top * local_offset.y);
+            
+            // The distance is still calculated physically to maintain smooth gradients!
+            let dist = distance(hit_pos, neighbor_center);
+            let impact = clamp(1.5 - dist, 0.0, 1.0) * 0.25; 
+            
+            occlusion += impact;
+        }
+    }
+
+    return clamp(1.0 - occlusion, 0.0, 1.0);
+}
+
+
+// Checks a custom footprint of neighbors and packs them into a single u32
+fn get_neighborhood_mask(face_center: vec3<f32>, hit_normal: vec3<f32>, render_radius: i32) -> u32 {
+    var mask: u32 = 0u;
+
+    // 1. Generate local tangent space for the face
+    var up = vec3<f32>(0.0, 1.0, 0.0);
+    if (abs(hit_normal.y) > 0.9) { up = vec3<f32>(1.0, 0.0, 0.0); }
+    let right = normalize(cross(hit_normal, up));
+    let top = cross(right, hit_normal);
+
+    // 2. Define the Neighborhood Blueprint (Right, Top, Normal)
+    // 1.0 = 1 Voxel width. You can easily add or remove coordinates here.
+    let offsets = array<vec3<f32>, 11>(
+        // LAYER 0: Base circle around the face (Diameter 3 / 8 voxels)
+        vec3<f32>(-1.0,  1.0,  0.0), vec3<f32>( 0.0,  1.0,  0.0), vec3<f32>( 1.0,  1.0,  0.0), // Top row
+        vec3<f32>(-1.0,  0.0,  0.0),                              vec3<f32>( 1.0,  0.0,  0.0), // Mid row (Center is our face)
+        vec3<f32>(-1.0, -1.0,  0.0), vec3<f32>( 0.0, -1.0,  0.0), vec3<f32>( 1.0, -1.0,  0.0), // Bot row
+
+        // LAYER 1: 1 Voxel straight out (Normal direction)
+        vec3<f32>( 0.0,  0.0,  1.0),
+
+        // LAYER 2: 2 Voxels straight out
+        vec3<f32>( 0.0,  0.0,  2.0),
+
+        // LAYER 3: 3 Voxels straight out
+        vec3<f32>( 0.0,  0.0,  3.0)
+    );
+
+    // 3. Query the SVO and pack the booleans
+    for (var i = 0u; i < 11u; i++) {
+        let local_offset = offsets[i];
+        
+        // boundary and into the dead-center of the target voxel.
+        let check_pos = face_center + (hit_normal * 0.5) 
+                      + (right * local_offset.x) 
+                      + (top * local_offset.y) 
+                      + (hit_normal * local_offset.z);
+
+        if (is_voxel_solid(check_pos, render_radius)) {
+            mask |= (1u << i); // Flip the bit to 1 if solid
+        }
+    }
+
+    return mask;
+}
+
+// ==========================================
 // 6. WAVEFRONT KERNELS (Split passes)
 // ==========================================
 
@@ -607,43 +770,39 @@ fn shading_pass(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let hit_info = hit_buffer[index];
 
     var final_color = lighting.sky_color; 
-
     let shadow_dir = normalize(lighting.sun_direction);
     
     if (hit_info.did_hit == 1u) {
         let max_index = arrayLength(&colour_lut) - 1u; 
-        var base_color = colour_lut[min(hit_info.payload, max_index)]; //fine
+        var base_color = colour_lut[min(hit_info.payload, max_index)];
         
-        let side_multiplier = get_face_multiplier(hit_info.hit_normal);
+        let side_multiplier = 1.0; //get_face_multiplier(hit_info.hit_normal);
         let dot_light = dot(hit_info.hit_normal, shadow_dir);
+        let render_radius = i32(camera.render_distance);
         
+        // Extract the bit-packed fractional dimming
+        let ao_factor = calculate_smooth_voxel_ao(hit_info.hit_pos, hit_info.hit_normal, render_radius);
+
         if (dot_light <= 0.0) {
-            final_color = base_color * lighting.ambient_strength; //THESE HAVE THE WRONG SIDE
+            final_color = base_color * lighting.ambient_strength * side_multiplier * ao_factor;  
         } else {
-            // Push ray slightly off surface
-            let shadow_origin = hit_info.hit_pos + (hit_info.hit_normal * 0.001);
-            let render_radius = i32(camera.render_distance);
-            
-            // Cast Shadow Ray
+            let shadow_origin = hit_info.hit_pos + (hit_info.hit_normal * 0.005);
             let is_occluded = cast_ray_anyhit(shadow_origin, shadow_dir, u32(render_radius * 2), render_radius, render_radius * 2);
             
             if (is_occluded) {
-                final_color = base_color * lighting.ambient_strength; 
+                final_color = base_color * lighting.ambient_strength * side_multiplier * ao_factor; 
             } else {
-                final_color = base_color * side_multiplier; 
+                final_color = base_color * side_multiplier * ao_factor; 
             }
         }
     } else {
+        let x = f32(global_id.x);
+        let y = f32(global_id.y);
+        let ray_dir = normalize(camera.top_left + (camera.delta_x * x) + (camera.delta_y * y));
 
-            let x = f32(global_id.x);
-            let y = f32(global_id.y);
-            let ray_dir = normalize(camera.top_left + (camera.delta_x * x) + (camera.delta_y * y));
-
-            let sky_multiplier = dot(ray_dir, shadow_dir) * 0.5 + 0.5;
-            final_color = vec4<f32>(lighting.sky_color.rgb * sky_multiplier, lighting.sky_color.a);
-
+        let sky_multiplier = dot(ray_dir, shadow_dir) * 0.5 + 0.5;
+        final_color = vec4<f32>(lighting.sky_color.rgb * sky_multiplier, lighting.sky_color.a);
     }
 
     textureStore(screen_texture, global_id.xy, final_color);
 }
-
