@@ -24,6 +24,7 @@ use winit::{
 use std::time::Instant; 
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
+use colored::Colorize;
 
 use crate::file_handler::save_file_interface;
 use crate::vecmath::*;
