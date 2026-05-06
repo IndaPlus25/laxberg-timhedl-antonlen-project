@@ -366,13 +366,13 @@ fn main() {
     };
 
     let colours: Vec<[f32; 4]> = vec![
-        [1.0, 1.0, 1.0, 1.0],   // 0: Vit också :)
-        [1.0, 0.0, 0.0, 1.0],   // 1: Röd
-        [0.0, 1.0, 0.0, 1.0],   // 2: Grön
-        [0.0, 0.0, 1.0, 1.0],   // 3: Blå
-        [1.0, 0.58, 0.0, 1.0],  // 4: Orange
-        [1.0, 0.83, 0.03, 1.0], // 5: Gul
-        [1.0, 1.0, 1.0, 1.0]    // 6: Vit
+        [1.0, 1.0, 1.0, 0.5],   // 0: Vit också :)
+        [1.0, 0.0, 0.0, 0.5],   // 1: Röd
+        [0.0, 1.0, 0.0, 0.5],   // 2: Grön
+        [0.0, 0.0, 1.0, 0.5],   // 3: Blå
+        [1.0, 0.58, 0.0, 0.5],  // 4: Orange
+        [1.0, 0.83, 0.03, 0.5], // 5: Gul
+        [1.0, 1.0, 1.0, 0.5]    // 6: Vit
     ];
 
     let lighting = Lighting { 
@@ -389,7 +389,7 @@ fn main() {
         player,
         current_acc_fps: 0.0,
         //använd bara 2^a render distances, ex: 4,8,16,32,64 ...
-        render_distance: 4,
+        render_distance: 16,
         colours,
         lighting,
         key_presses: KeyPresses::new(),

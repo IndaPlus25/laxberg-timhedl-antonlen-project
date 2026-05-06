@@ -571,114 +571,6 @@ fn cast_ray_anyhit(origin: vec3<f32>, direction: vec3<f32>, limit: u32, render_r
 }
 
 // ==========================================
-// REFLECTION
-// ==========================================
-
-fn reflection_master(origin: vec3<f32>, in_direction: vec3<f32>, in_normal: vec3<f32>, limit: u32, out_payload: ptr<function, u32>, render_radius: i32, render_diameter: i32, reflection_limit: u32) -> bool {
-    
-    if reflection_limit == 0 {
-        return true;
-    }
-
-    total_out_payload = Color[0.0, 0.0, 0.0, 0.0]
-    
-    var i = 0u;
-
-    for (;i < reflection_limit; i++) {
-
-        let reflection_data = cast_reflection_ray(origin, ray_dir, in_normal, &payload, limit, &out_payload, render_radius, render_diameter);
-
-        //here we get the colors alpha value as that is unused. That will be the refraction index. 1.0 means solid, 0.0 means perfect mirror. 
-        //close to one means that the reflected ray matters less. 
-        total_out_payload += //color hits values except alpha based on the payload fron the reflection data  
-
-        if !reflection_data.hit_mirror {
-            break;
-        } else if reflection_data.missed {
-            return false;
-        }
-
-    }
-
-    out_payload = out_payload/i //divide the total color by encounters. This might be stupid so change this if there is a more standard way
-    return true;
-    
-
-}
-
-fn cast_reflection_ray(origin: vec3<f32>, in_direction: vec3<f32>, in_normal: vec3<f32>, limit: u32, out_payload: ptr<function, u32>, render_radius: i32, render_diameter: i32) -> reflection_data{
-    let chunk_size = 32.0;
-    var chunk_pos = vec3<i32>(floor(origin / chunk_size));
-
-    let direction = in_direction - (2.0 * dot(in_direction, in_normal) * in_normal);
-    
-    let safe_dir = vec3<f32>(
-        select(direction.x, select(-0.0000001, 0.0000001, direction.x >= 0.0), abs(direction.x) < 0.0000001),
-        select(direction.y, select(-0.0000001, 0.0000001, direction.y >= 0.0), abs(direction.y) < 0.0000001),
-        select(direction.z, select(-0.0000001, 0.0000001, direction.z >= 0.0), abs(direction.z) < 0.0000001)
-    );
-    var inv_dir = 1.0 / safe_dir;
-
-    var step = vec3<i32>(0);
-    var t_max = vec3<f32>(0.0);
-    var t_delta = vec3<f32>(0.0);
-    
-    // X
-    t_delta.x = abs(chunk_size * inv_dir.x);
-    if (direction.x > 0.0) {
-        step.x = 1;
-        t_max.x = ((f32(chunk_pos.x + 1) * chunk_size) - origin.x) * inv_dir.x;
-    } else {
-        step.x = -1;
-        t_max.x = (origin.x - (f32(chunk_pos.x) * chunk_size)) * -inv_dir.x;
-    }
-    // Y
-    t_delta.y = abs(chunk_size * inv_dir.y);
-    if (direction.y > 0.0) {
-        step.y = 1;
-        t_max.y = ((f32(chunk_pos.y + 1) * chunk_size) - origin.y) * inv_dir.y;
-    } else {
-        step.y = -1;
-        t_max.y = (origin.y - (f32(chunk_pos.y) * chunk_size)) * -inv_dir.y;
-    }
-    // Z
-    t_delta.z = abs(chunk_size * inv_dir.z);
-    if (direction.z > 0.0) {
-        step.z = 1;
-        t_max.z = ((f32(chunk_pos.z + 1) * chunk_size) - origin.z) * inv_dir.z;
-    } else {
-        step.z = -1;
-        t_max.z = (origin.z - (f32(chunk_pos.z) * chunk_size)) * -inv_dir.z;
-    }
-
-    // DDA LOOPEN
-    for (var i = 0u; i < limit; i++) {
-        let chunk_root_ptr = get_chunk_root_pointer(chunk_pos, render_radius, render_diameter);
-        
-        if (chunk_root_ptr != 0xFFFFFFFFu) {
-            let chunk_min = vec3<f32>(chunk_pos) * chunk_size;
-            let chunk_max = chunk_min + vec3<f32>(chunk_size);
-            
-            // Dyk in i Micro SVO-traverseringen
-            if (find_intersection(origin, direction, chunk_min, chunk_max, chunk_root_ptr, out_payload, out_pos, out_normal)) {
-                return true;
-            }
-        }
-
-        // Stega DDA
-        if (t_max.x < t_max.y) {
-            if (t_max.x < t_max.z) { chunk_pos.x += step.x; t_max.x += t_delta.x; }
-            else { chunk_pos.z += step.z; t_max.z += t_delta.z; }
-        } else {
-            if (t_max.y < t_max.z) { chunk_pos.y += step.y; t_max.y += t_delta.y; }
-            else { chunk_pos.z += step.z; t_max.z += t_delta.z; }
-        }
-    }
-    return false;
-}
-
-
-// ==========================================
 // Specific voxel checks
 // ==========================================
 
@@ -883,40 +775,89 @@ fn shading_pass(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let index = global_id.y * dimensions.x + global_id.x;
     let hit_info = hit_buffer[index];
 
-    var final_color = lighting.sky_color; 
+    let x = f32(global_id.x);
+    let y = f32(global_id.y);
+    let ray_dir = normalize(camera.top_left + (camera.delta_x * x) + (camera.delta_y * y));
     let shadow_dir = normalize(lighting.sun_direction);
+    let render_radius = i32(camera.render_distance);
+    let render_diameter = render_radius * 2;
+
+    // Delegate all the heavy lifting to the radiance function
+    let final_rgb = shade(hit_info, ray_dir, shadow_dir, render_radius, render_diameter);
+
+    textureStore(screen_texture, global_id.xy, vec4<f32>(final_rgb, lighting.sky_color.a));
+}
+
+fn shade(initial_hit: HitData, initial_ray_dir: vec3<f32>, shadow_dir: vec3<f32>, render_radius: i32, render_diameter: i32) -> vec3<f32> {
     
-    if (hit_info.did_hit == 1u) {
-        let max_index = arrayLength(&colour_lut) - 1u; 
-        var base_color = colour_lut[min(hit_info.payload, max_index)];
-        
-        let side_multiplier = 1.0; //get_face_multiplier(hit_info.hit_normal);
-        let dot_light = dot(hit_info.hit_normal, shadow_dir);
-        let render_radius = i32(camera.render_distance);
-        
-        // Extract the bit-packed fractional dimming
-        let ao_factor = calculate_smooth_voxel_ao(hit_info.hit_pos, hit_info.hit_normal, render_radius);
+    var hit_info = initial_hit;
+    var ray_dir = initial_ray_dir;
+    var final_rgb = vec3<f32>(0.0);
+    var ray_fraction = 1.0; 
+    let reflection_limit = 3u;
 
-        if (dot_light <= 0.0) {
-            final_color = base_color * lighting.ambient_strength * side_multiplier * ao_factor;  
-        } else {
-            let shadow_origin = hit_info.hit_pos + (hit_info.hit_normal * 0.005);
-            let is_occluded = cast_ray_anyhit(shadow_origin, shadow_dir, u32(render_radius * 2), render_radius, render_radius * 2);
-            
-            if (is_occluded) {
-                final_color = base_color * lighting.ambient_strength * side_multiplier * ao_factor; 
-            } else {
-                final_color = base_color * side_multiplier * ao_factor; 
-            }
-        }
-    } else {
-        let x = f32(global_id.x);
-        let y = f32(global_id.y);
-        let ray_dir = normalize(camera.top_left + (camera.delta_x * x) + (camera.delta_y * y));
-
+    // If the primary ray hit the sky, return sky color immediately
+    if (hit_info.did_hit == 0u) {
         let sky_multiplier = dot(ray_dir, shadow_dir) * 0.5 + 0.5;
-        final_color = vec4<f32>(lighting.sky_color.rgb * sky_multiplier, lighting.sky_color.a);
+        return lighting.sky_color.rgb * sky_multiplier;
     }
 
-    textureStore(screen_texture, global_id.xy, final_color);
+    // Bounce Loop
+    for (var i = 0u; i < reflection_limit; i++) {
+        
+        let color_index = hit_info.payload; 
+
+        let max_index = arrayLength(&colour_lut) - 1u; 
+        let base_color_data = colour_lut[min(color_index, max_index)];
+        let base_color = base_color_data.rgb;
+
+        let reflectivity = base_color_data.a; 
+        let is_reflective = reflectivity > 0.0;
+
+        let side_multiplier = 1.0; 
+        let ao_factor = calculate_smooth_voxel_ao(hit_info.hit_pos, hit_info.hit_normal, render_radius);
+        
+        var direct_light = base_color * lighting.ambient_strength;
+        let dot_light = dot(hit_info.hit_normal, shadow_dir);
+        
+        if (dot_light > 0.0) {
+            let shadow_origin = hit_info.hit_pos + (hit_info.hit_normal * 0.005);
+            let is_occluded = cast_ray_anyhit(shadow_origin, shadow_dir, u32(render_diameter), render_radius, render_diameter);
+            if (!is_occluded) {
+                direct_light = base_color;
+            }
+        }
+        
+        direct_light = direct_light * side_multiplier * ao_factor;
+
+        let surface_contribution = direct_light * ray_fraction * (1.0 - reflectivity);
+        final_rgb += surface_contribution;
+
+        ray_fraction *= reflectivity;
+
+        if (!is_reflective || ray_fraction < 0.01) {
+            break;
+        }
+
+        ray_dir = reflect(ray_dir, hit_info.hit_normal);
+        let next_origin = hit_info.hit_pos + (hit_info.hit_normal * 0.005);
+
+        var next_payload: u32 = 0u;
+        var next_pos: vec3<f32> = vec3<f32>(0.0);
+        var next_normal: vec3<f32> = vec3<f32>(0.0);
+
+        let did_hit = cast_ray(next_origin, ray_dir, u32(render_diameter), &next_payload, &next_pos, &next_normal, render_radius, render_diameter);
+
+        if (!did_hit) {
+            let sky_multiplier = dot(ray_dir, shadow_dir) * 0.5 + 0.5;
+            final_rgb += (lighting.sky_color.rgb * sky_multiplier) * ray_fraction;
+            break;
+        }
+
+        hit_info.hit_pos = next_pos;
+        hit_info.hit_normal = next_normal;
+        hit_info.payload = next_payload;
+    }
+
+    return final_rgb;
 }
