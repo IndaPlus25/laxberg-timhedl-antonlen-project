@@ -25,6 +25,11 @@ struct Lighting {
     sky_color: vec4<f32>,
 }
 
+struct Reflection {
+    missed: bool,
+    hit_mirror: bool,
+}
+
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var screen_texture: texture_storage_2d<bgra8unorm, write>;
 @group(0) @binding(2) var<storage, read> world_data: array<u32>; 
@@ -564,6 +569,114 @@ fn cast_ray_anyhit(origin: vec3<f32>, direction: vec3<f32>, limit: u32, render_r
     }
     return false;
 }
+
+// ==========================================
+// REFLECTION
+// ==========================================
+
+fn reflection_master(origin: vec3<f32>, in_direction: vec3<f32>, in_normal: vec3<f32>, limit: u32, out_payload: ptr<function, u32>, render_radius: i32, render_diameter: i32, reflection_limit: u32) -> bool {
+    
+    if reflection_limit == 0 {
+        return true;
+    }
+
+    total_out_payload = Color[0.0, 0.0, 0.0, 0.0]
+    
+    var i = 0u;
+
+    for (;i < reflection_limit; i++) {
+
+        let reflection_data = cast_reflection_ray(origin, ray_dir, in_normal, &payload, limit, &out_payload, render_radius, render_diameter);
+
+        //here we get the colors alpha value as that is unused. That will be the refraction index. 1.0 means solid, 0.0 means perfect mirror. 
+        //close to one means that the reflected ray matters less. 
+        total_out_payload += //color hits values except alpha based on the payload fron the reflection data  
+
+        if !reflection_data.hit_mirror {
+            break;
+        } else if reflection_data.missed {
+            return false;
+        }
+
+    }
+
+    out_payload = out_payload/i //divide the total color by encounters. This might be stupid so change this if there is a more standard way
+    return true;
+    
+
+}
+
+fn cast_reflection_ray(origin: vec3<f32>, in_direction: vec3<f32>, in_normal: vec3<f32>, limit: u32, out_payload: ptr<function, u32>, render_radius: i32, render_diameter: i32) -> reflection_data{
+    let chunk_size = 32.0;
+    var chunk_pos = vec3<i32>(floor(origin / chunk_size));
+
+    let direction = in_direction - (2.0 * dot(in_direction, in_normal) * in_normal);
+    
+    let safe_dir = vec3<f32>(
+        select(direction.x, select(-0.0000001, 0.0000001, direction.x >= 0.0), abs(direction.x) < 0.0000001),
+        select(direction.y, select(-0.0000001, 0.0000001, direction.y >= 0.0), abs(direction.y) < 0.0000001),
+        select(direction.z, select(-0.0000001, 0.0000001, direction.z >= 0.0), abs(direction.z) < 0.0000001)
+    );
+    var inv_dir = 1.0 / safe_dir;
+
+    var step = vec3<i32>(0);
+    var t_max = vec3<f32>(0.0);
+    var t_delta = vec3<f32>(0.0);
+    
+    // X
+    t_delta.x = abs(chunk_size * inv_dir.x);
+    if (direction.x > 0.0) {
+        step.x = 1;
+        t_max.x = ((f32(chunk_pos.x + 1) * chunk_size) - origin.x) * inv_dir.x;
+    } else {
+        step.x = -1;
+        t_max.x = (origin.x - (f32(chunk_pos.x) * chunk_size)) * -inv_dir.x;
+    }
+    // Y
+    t_delta.y = abs(chunk_size * inv_dir.y);
+    if (direction.y > 0.0) {
+        step.y = 1;
+        t_max.y = ((f32(chunk_pos.y + 1) * chunk_size) - origin.y) * inv_dir.y;
+    } else {
+        step.y = -1;
+        t_max.y = (origin.y - (f32(chunk_pos.y) * chunk_size)) * -inv_dir.y;
+    }
+    // Z
+    t_delta.z = abs(chunk_size * inv_dir.z);
+    if (direction.z > 0.0) {
+        step.z = 1;
+        t_max.z = ((f32(chunk_pos.z + 1) * chunk_size) - origin.z) * inv_dir.z;
+    } else {
+        step.z = -1;
+        t_max.z = (origin.z - (f32(chunk_pos.z) * chunk_size)) * -inv_dir.z;
+    }
+
+    // DDA LOOPEN
+    for (var i = 0u; i < limit; i++) {
+        let chunk_root_ptr = get_chunk_root_pointer(chunk_pos, render_radius, render_diameter);
+        
+        if (chunk_root_ptr != 0xFFFFFFFFu) {
+            let chunk_min = vec3<f32>(chunk_pos) * chunk_size;
+            let chunk_max = chunk_min + vec3<f32>(chunk_size);
+            
+            // Dyk in i Micro SVO-traverseringen
+            if (find_intersection(origin, direction, chunk_min, chunk_max, chunk_root_ptr, out_payload, out_pos, out_normal)) {
+                return true;
+            }
+        }
+
+        // Stega DDA
+        if (t_max.x < t_max.y) {
+            if (t_max.x < t_max.z) { chunk_pos.x += step.x; t_max.x += t_delta.x; }
+            else { chunk_pos.z += step.z; t_max.z += t_delta.z; }
+        } else {
+            if (t_max.y < t_max.z) { chunk_pos.y += step.y; t_max.y += t_delta.y; }
+            else { chunk_pos.z += step.z; t_max.z += t_delta.z; }
+        }
+    }
+    return false;
+}
+
 
 // ==========================================
 // Specific voxel checks
