@@ -388,7 +388,8 @@ fn main() {
         frames_this_second: 0,
         player,
         current_acc_fps: 0.0,
-        render_distance: 8,
+        //använd bara 2^a render distances, ex: 4,8,16,32,64 ...
+        render_distance: 4,
         colours,
         lighting,
         key_presses: KeyPresses::new(),
