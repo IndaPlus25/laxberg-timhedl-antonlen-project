@@ -569,13 +569,11 @@ fn cast_ray_anyhit(origin: vec3<f32>, direction: vec3<f32>, limit: u32, render_r
 // Specific voxel checks
 // ==========================================
 
-// Extremely fast top-down point query. Bypasses DDA entirely.
 fn is_voxel_solid(pos: vec3<f32>, render_radius: i32) -> bool {
     let chunk_size = 32.0;
     let chunk_pos = vec3<i32>(floor(pos / chunk_size));
     let render_diameter = render_radius * 2;
 
-    // 1. Find the chunk root pointer
     let root_ptr = get_chunk_root_pointer(chunk_pos, render_radius, render_diameter);
     if (root_ptr == 0xFFFFFFFFu) { return false; } // Chunk doesn't exist
 
@@ -583,7 +581,6 @@ fn is_voxel_solid(pos: vec3<f32>, render_radius: i32) -> bool {
     var current_min = vec3<f32>(chunk_pos) * chunk_size;
     var current_size = chunk_size;
 
-    // 2. Traverse down the 5 levels of the SVO
     for (var level = 0u; level < 6u; level++) {
         current_size *= 0.5;
         let center = current_min + vec3<f32>(current_size);
@@ -602,7 +599,6 @@ fn is_voxel_solid(pos: vec3<f32>, render_radius: i32) -> bool {
         let child_idx = pointer + child_pop_count(current_node, sub_index);
         let child_node = world_data[root_ptr + child_idx];
 
-        // If we hit a leaf before the bottom, it's a solid block
         if (is_leaf(current_node, sub_index)) { return true; }
         
         current_node = child_node;

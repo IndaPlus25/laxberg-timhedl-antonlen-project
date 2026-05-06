@@ -168,7 +168,7 @@ impl State {
             sky_color: [0.0, 0.0, 0.0, 1.0],
         };
 
-        let grid_size = render_distance * 2 + 2; //plus 2 för att förhindra wrap around
+        let grid_size = render_distance * 2;
         let indexer_size = grid_size * grid_size * grid_size;
 
         let pixel_count = (size.width * size.height) as wgpu::BufferAddress;

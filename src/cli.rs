@@ -47,7 +47,7 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
 
             println!("Successfully built {} chunks!", chunks.len());
             app.chunks = chunks;
-            upload_world_to_gpu(app);
+            reset_and_upload_world(app);
         }
         CliCommand::Save(path) => {
             let data = &app.chunks;
@@ -61,7 +61,7 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
                 Ok(data) => {
                     println!("Successfully loaded data");
                     app.chunks = data;
-                    upload_world_to_gpu(app);
+                    reset_and_upload_world(app);
                 },
                 Err(e) => println!("{}, please try again", e),
             }
@@ -69,23 +69,15 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
     }
 }
 
-// Ill put this here for now but maybe move to main in future
-fn upload_world_to_gpu(app: &mut App) {
-    let packed = pack_world_to_gpu(&app.chunks, app.render_distance);
-    let packed_bytes: &[u8] = bytemuck::cast_slice(&packed);
-
+fn reset_and_upload_world(app: &mut App) {
     let state = app.state.as_mut().unwrap();
-    let existing_size = state.world_buffer.size();
-
-    if packed_bytes.len() as u64 <= existing_size {
-        state.queue.write_buffer(&state.world_buffer, 0, packed_bytes);
-    } else {
-        state.world_buffer = state.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("World Storage Buffer (Reloaded)"),
-                contents: packed_bytes,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            }
-        );
-    }
+    
+    state.active_chunks.clear();
+    
+    let indexer_size = state.grid_size * state.grid_size * state.grid_size;
+    let max_u32_elements = (state.world_buffer.size() / 4) as u32;
+    state.allocator = crate::VoxelHeapAllocator::new(indexer_size, max_u32_elements);
+    
+    let empty_indexer = vec![0xFFFFFFFFu32; indexer_size as usize];
+    state.queue.write_buffer(&state.world_buffer, 0, bytemuck::cast_slice(&empty_indexer));
 }

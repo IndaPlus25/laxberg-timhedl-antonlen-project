@@ -196,6 +196,9 @@ impl ApplicationHandler<CliCommand> for App {
 
                     self.frames_this_second = 0;
                     self.last_fps_update = Instant::now();
+
+                    //println!("position");
+                    //println!("x: {}, y: {}, z: {}", self.player.position.x, self.player.position.y, self.player.position.z);
                 }
                 //=============================
 
@@ -385,7 +388,7 @@ fn main() {
         frames_this_second: 0,
         player,
         current_acc_fps: 0.0,
-        render_distance: 16,
+        render_distance: 8,
         colours,
         lighting,
         key_presses: KeyPresses::new(),
