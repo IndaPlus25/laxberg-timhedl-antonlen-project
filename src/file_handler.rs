@@ -19,6 +19,12 @@ struct FormatedChunkRef<'a> {
     max_pos: V3,
 }
 
+#[derive(Serialize)]
+struct FormatedFileRef <'a>{
+    color: &'a Vec<[f32; 4]>,
+    parsed_data: &'a Vec<FormatedChunkRef<'a>>,
+}
+
 #[derive(Deserialize)]
 struct FormatedChunk {
     index: V3i,
@@ -27,8 +33,14 @@ struct FormatedChunk {
     max_pos: V3,
 }
 
+#[derive(Deserialize)]
+struct FormatedFile{
+    color: Vec<[f32; 4]>,
+    parsed_data: Vec<FormatedChunk>,
+}
+
 /// this is the interface to interact with the file_handler when saving a file.
-pub fn save_file_interface(filepath: &str, data: &HashMap<V3i, Chunk>) -> Result<(), SaveAndLoadError>{
+pub fn save_file_interface(filepath: &str, data: &HashMap<V3i, Chunk>, colors: &Vec<[f32; 4]>) -> Result<(), SaveAndLoadError>{
     let path = Path::new(filepath);
     let extension = path.extension()
         .and_then(|ext| ext.to_str())
@@ -39,18 +51,19 @@ pub fn save_file_interface(filepath: &str, data: &HashMap<V3i, Chunk>) -> Result
         _ => {return Err(SaveAndLoadError::NotSupportedFileFormat(extension));},
     }
     
-    save_file(path, &data)
+    save_file(path, &data, colors)
 }
 
-fn save_file(filepath: &Path, data: &HashMap<V3i, Chunk>) -> Result<(), SaveAndLoadError>{
+fn save_file(filepath: &Path, data: &HashMap<V3i, Chunk>, colors: &Vec<[f32; 4]>) -> Result<(), SaveAndLoadError>{
     let file = File::create(filepath)?;
     let writer = BufWriter::new(file);
 
     let compressor = GzEncoder::new(writer, Compression::default());
 
     let parsed_data = parse_chunks(data);
+    let formated_file = FormatedFileRef {color: &colors, parsed_data: &parsed_data};
 
-    bincode::serialize_into(compressor, &parsed_data)?;
+    bincode::serialize_into(compressor, &formated_file)?;
     Ok(())
 }
 
@@ -73,7 +86,7 @@ fn parse_chunks(data: &'_ HashMap<V3i, Chunk>) -> Vec<FormatedChunkRef<'_>>{
 
 
 /// this is the interface to interact with the file_handler when loading a file.
-pub fn load_file_interface(filepath: &str) -> Result<HashMap<V3i, Chunk>, SaveAndLoadError>{
+pub fn load_file_interface(filepath: &str) -> Result<(HashMap<V3i, Chunk>, Vec<[f32; 4]>), SaveAndLoadError>{
     let path = Path::new(filepath);
     let extension = path.extension()
         .and_then(|ext| ext.to_str())
@@ -89,14 +102,17 @@ pub fn load_file_interface(filepath: &str) -> Result<HashMap<V3i, Chunk>, SaveAn
     Ok(data)
 }
 
-fn load_file(filepath: &Path) -> Result<HashMap<V3i, Chunk>, SaveAndLoadError> {
+fn load_file(filepath: &Path) -> Result<(HashMap<V3i, Chunk>, Vec<[f32; 4]>), SaveAndLoadError> {
     let file = File::open(filepath)?;
     let reader = BufReader::new(file);
 
     let decompressor = GzDecoder::new(reader);
 
-    let loaded_data: Vec<FormatedChunk> = bincode::deserialize_from(decompressor)?;
+    let loaded_file: FormatedFile = bincode::deserialize_from(decompressor)?;
     let mut world_map: HashMap<V3i, Chunk> = HashMap::new();
+
+    let loaded_data = loaded_file.parsed_data;
+    let loaded_color = loaded_file.color;
 
     for entry in loaded_data {
         let chunk = Chunk { 
@@ -108,7 +124,7 @@ fn load_file(filepath: &Path) -> Result<HashMap<V3i, Chunk>, SaveAndLoadError> {
         world_map.insert(entry.index, chunk);
     }
 
-    Ok(world_map)
+    Ok((world_map, loaded_color))
 }
 
 
@@ -131,9 +147,9 @@ mod tests {
 
         let filepath = "test_file1.bin";
 
-        save_file_interface(filepath, &original_data).expect("Failed to save data");
+        save_file_interface(filepath, &original_data, &vec![[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0]]).expect("Failed to save data");
 
-        let loaded_data = load_file_interface(filepath).expect("Failed to load data");
+        let (loaded_data, loaded_color) = load_file_interface(filepath).expect("Failed to load data");
 
         let orig_chunk = original_data.get(&pos).unwrap();
         let load_chunk = loaded_data.get(&pos).unwrap();
@@ -150,6 +166,7 @@ mod tests {
             "max_pos did not match!"
         );
         assert_eq!(orig_chunk.data, load_chunk.data);
+        assert_eq!(vec![[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0]], loaded_color);
 
         std::fs::remove_file(filepath).unwrap();
     }
@@ -165,7 +182,7 @@ mod tests {
             .and_then(|ext| ext.to_str())
             .map(|ext|ext.to_lowercase());
 
-        let save_result = save_file_interface(filepath, &original_data);
+        let save_result = save_file_interface(filepath, &original_data, &vec![[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0]]);
         let actual_err = save_result.unwrap_err();
 
         assert!(
@@ -234,7 +251,7 @@ mod tests {
   
         let filepath = "magic-folder/test_file5.bin";
 
-        let save_result = save_file_interface(filepath, &original_data);
+        let save_result = save_file_interface(filepath, &original_data, &vec![[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0]]);
         let actual_err = save_result.unwrap_err();
 
         assert!(

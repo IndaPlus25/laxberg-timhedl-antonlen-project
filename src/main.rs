@@ -34,6 +34,8 @@ use crate::state::*;
 use crate::cli::*;
 use crate::worldgen::generate_random_world;
 
+const DEFAULT_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+
 pub struct Player {
     pub position: V3,
     pub direction: (f32, f32),
@@ -354,6 +356,7 @@ fn main() {
     });
 
     let chunks = HashMap::new();
+    let colours = vec![DEFAULT_COLOR];
 
     let player = Player {
         position: V3{
@@ -364,16 +367,6 @@ fn main() {
         //direction: (0.0, -std::f32::consts::FRAC_PI_2)               
         direction: (std::f32::consts::FRAC_PI_3, 0.0)               
     };
-
-    let colours: Vec<[f32; 4]> = vec![
-        [1.0, 1.0, 1.0, 0.5],   // 0: Vit också :)
-        [1.0, 0.0, 0.0, 0.5],   // 1: Röd
-        [0.0, 1.0, 0.0, 0.5],   // 2: Grön
-        [0.0, 0.0, 1.0, 0.5],   // 3: Blå
-        [1.0, 0.58, 0.0, 0.5],  // 4: Orange
-        [1.0, 0.83, 0.03, 0.5], // 5: Gul
-        [1.0, 1.0, 1.0, 0.5]    // 6: Vit
-    ];
 
     let lighting = Lighting { 
         sun_direction: V3{x: -0.5, y: 0.8, z: 0.3},
