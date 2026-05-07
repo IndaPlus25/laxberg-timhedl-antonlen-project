@@ -1,5 +1,22 @@
 use rand::RngExt; 
 
+
+pub fn generate_single_chunk(color: u32) -> Vec<u32> {
+    let mut flat_data = vec![0; 32768];
+
+    for dx in 0..32 {
+        for dz in 0..32 {
+            for dy in 0..32 {
+                let index = dx + (dy * 32) + (dz * 32 * 32);
+                if dy < 16 {
+                    flat_data[index] = color;
+                }
+            }
+        }
+    }
+    flat_data
+}
+
 pub fn generate_random_world(width: usize, height: usize, depth: usize, density: f64, max_material: u32) -> Vec<Vec<Vec<u32>>> {
 
     let mut world = vec![vec![vec![0; depth]; height]; width];
