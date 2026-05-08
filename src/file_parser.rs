@@ -129,8 +129,6 @@ impl PaletteManager {
                 let mut folder = self.folder.clone();
                 folder.push(PathBuf::from(palette));
 
-                println!("{:?}", folder);
-
                 match image::open(folder) {
                     Ok(img) => Some(img.into_rgba8()),
                     Err(_) => None,
