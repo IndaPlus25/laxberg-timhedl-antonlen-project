@@ -111,6 +111,8 @@ struct ObjParser{
     colors: Vec<Vertex>, 
     color_translator: HashMap<String, usize>,
     current_color: String,
+
+    palette_manager: PaletteManager
 }
 
 impl ObjParser {
@@ -121,6 +123,7 @@ impl ObjParser {
             colors: vec![DEFAULT_COLOR, DEFAULT_COLOR],
             current_color: String::new(),
             color_translator: HashMap::new(),
+            palette_manager: PaletteManager::new(),
         }
     }
 
@@ -174,7 +177,7 @@ impl ObjParser {
                 x if x.starts_with("newmtl ") => current_material = x[7..].trim().to_owned(),
                 x if x.starts_with("kd ") => {
                     let color = x[3..].trim();
-                    
+
                     let vertex = self.parse_vertices(color)?;
                     let parsed_color = Vertex {
                         x: vertex.x.powf(inverse_gamma),
@@ -239,23 +242,24 @@ impl FileFormat for ObjParser {
             x if x.starts_with("mtllib ") => {
                 let color_scheme_path = x[7..].trim();
 
-                if let Some(folder_path) = folder{
-                    let full_path = folder_path.join(color_scheme_path);
+                let full_path = match folder{
+                    Some(folder_path) => folder_path.join(color_scheme_path),
+                    None => PathBuf::from(color_scheme_path),
+                };
 
-                    let color_file = match File::open(full_path){
-                        Ok(file) => file,
-                        Err(_) => return Ok(()),
-                    };
+                let color_file = match File::open(full_path){
+                    Ok(file) => file,
+                    Err(_) => return Ok(()),
+                };
 
-                    match self.parse_color_file(&color_file){
-                        Ok(color_hash) => self.color_translator = color_hash,
-                        Err(_) => {
-                            return Ok(())
-                        },
-                    };
+                match self.parse_color_file(&color_file){
+                    Ok(color_hash) => self.color_translator = color_hash,
+                    Err(_) => {
+                        return Ok(())
+                    },
+                };
 
-                    println!("{:?}", self.color_translator)
-                }
+                println!("{:?}", self.color_translator)
             },
             x if x.starts_with("usemtl ") => {
                 self.current_color = x[7..].trim().to_string();
