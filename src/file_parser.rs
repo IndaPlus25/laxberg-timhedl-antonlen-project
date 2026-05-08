@@ -269,6 +269,10 @@ impl ObjParser {
 
 impl FileFormat for ObjParser { 
     fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError> {
+        if let Some(folder) = folder {
+            self.palette_manager.folder = folder.to_path_buf()
+        }        
+        
         for (i, line_result) in reader.lines().enumerate(){
             match self.parse_line(line_result, folder) {
                 Ok(_) => {},
