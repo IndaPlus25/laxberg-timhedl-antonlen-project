@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Error, ErrorKind};
+use std::io::{BufRead, BufReader, Error, ErrorKind, Read};
 use std::path::{Path, PathBuf};
+use gltf::buffer::Data;
 use image::RgbaImage;
+use gltf::Gltf;
 
 const DEFAULT_COLOR: Vertex = Vertex {x: 1.0, y: 1.0, z: 1.0};
 
@@ -399,11 +401,20 @@ impl GlbParser {
             faces: vec![],
             palette_manager: PaletteManager::new(),
         }
-    }    
+    }   
+
+    fn parse_glb(reader: &mut BufReader<File>) -> Result<(gltf::Document, Vec<gltf::buffer::Data>, Vec<gltf::image::Data>), FileParseError> {
+        let mut file_bytes = Vec::new();  
+        reader.read_to_end(&mut file_bytes)?;  
+
+        Ok(gltf::import_slice(&file_bytes)?)
+    } 
 }
 
 impl FileFormat for GlbParser {
     fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError> {
+        let (document, buffers, images) = GlbParser::parse_glb(reader)?;
+
         todo!()
     }
 

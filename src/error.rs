@@ -10,12 +10,19 @@ pub enum FileParseError{
     MissingCoordinate,
     FailedLineParse(usize, Box<FileParseError>),
     IoError(std::io::Error),
+    GltfError(gltf::Error),
     NotSupportedFileFormat(Option<String>),
 }
 
 impl From<std::io::Error> for FileParseError {
     fn from(err: std::io::Error) -> Self {
         FileParseError::IoError(err)
+    }
+}
+
+impl From<gltf::Error> for FileParseError {
+    fn from(err: gltf::Error) -> Self {
+        FileParseError::GltfError(err)
     }
 }
 
@@ -29,6 +36,7 @@ impl fmt::Display for FileParseError {
             FileParseError::MissingCoordinate => write!(f, "Missing coordinate to parse"),
             FileParseError::FailedLineParse(u, error) => write!(f, "Failed to parse line '{}' due to error '{}'", u, *error),
             FileParseError::IoError(error) => write!(f, "Failed due to Io Error '{}'", error),
+            FileParseError::GltfError(error) => write!(f, "Failed due to Gltf Error '{}'", error),
             
             FileParseError::NotSupportedFileFormat(option) => {
                 if let Some(format) = option {
