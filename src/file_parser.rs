@@ -188,14 +188,18 @@ impl ObjParser {
         }
     }
 
-    fn parse_face_obj_format(part: Option<&str>) -> Result<usize, FileParseError> {
+    fn parse_face_obj_format(part: Option<&str>) -> Result<(usize, Option<usize>), FileParseError> {
         let Some(point_data) = part else {
             return Err(FileParseError::MissingData);
         };
 
-        let Some(point_str) = point_data.split('/').next() else {
+        let mut parts = point_data.split('/');
+
+        let Some(point_str) = parts.next() else {
             return Err(FileParseError::MissingPoint);
         };
+
+        let texture = parts.next().and_then(|s| s.parse::<usize>().ok());
 
         let Ok(parsed_point) = point_str.parse::<usize>() else {
             return Err(FileParseError::InvalidDataType(point_str.to_string()));
@@ -205,7 +209,7 @@ impl ObjParser {
             return Err(FileParseError::DataOutOfBounds(parsed_point));
         };
 
-        Ok(point)
+        Ok((point, texture))
     }
 
     fn parse_vertex_obj_format(part: Option<&str>) -> Result<f32, FileParseError> { 
@@ -357,27 +361,24 @@ impl FileFormat for ObjParser {
     fn parse_faces(&self, vertices: &str)  -> Result<Vec<Face>, FileParseError> {
         let mut parts = vertices.split_whitespace();
 
-        let a = ObjParser::parse_face_obj_format(parts.next())?;
-        let b = ObjParser::parse_face_obj_format(parts.next())?;
-        let c = ObjParser::parse_face_obj_format(parts.next())?;
+        let (a, texture_a) = ObjParser::parse_face_obj_format(parts.next())?;
+        let (b, texture_b) = ObjParser::parse_face_obj_format(parts.next())?;
+        let (c, texture_c) = ObjParser::parse_face_obj_format(parts.next())?;
 
-        let color = match self.color_translator.get(&self.current_color) {
-            Some(color) => color,
-            None => &1,
-        };
+        let mut color_id: usize = self.palette_manager.get_current_color().copied().unwrap_or(1);
 
         match ObjParser::parse_face_obj_format(parts.next()) {
-            Ok(d) => {
+            Ok((d, texture_d)) => {
                 return Ok(vec![
-                    Face {v1: a, v2: b, v3: c, color_id: color.clone()},
-                    Face {v1: a, v2: c, v3: d, color_id: color.clone()},   
+                    Face {v1: a, v2: b, v3: c, color_id: color_id},
+                    Face {v1: a, v2: c, v3: d, color_id: color_id},   
                 ])
             }
             Err(_) => {}
         };
 
         Ok(vec![
-            Face {v1: a, v2: b, v3: c, color_id: color.clone()}
+            Face {v1: a, v2: b, v3: c, color_id: color_id}
         ])
     }
 
