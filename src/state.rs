@@ -102,7 +102,7 @@ impl VoxelHeapAllocator {
 }
 
 impl State {
-    pub async fn new(display: OwnedDisplayHandle, window: Arc<Window>, gpu_world_data: &[u32], render_distance: u32) -> State {
+    pub async fn new(display: OwnedDisplayHandle, window: Arc<Window>, gpu_world_data: &[u32], render_distance: u32, desired_heap_bytes: u64) -> State {
         let mut descriptor = wgpu::InstanceDescriptor::new_with_display_handle(Box::new(display));
         descriptor.backends = wgpu::Backends::VULKAN;
         descriptor.flags |= wgpu::InstanceFlags::DEBUG;
@@ -117,10 +117,7 @@ impl State {
         let supported_limits = adapter.limits();
         let absolute_max_buffer = supported_limits.max_storage_buffer_binding_size as u64;
 
-        //four gb limit
-        let four_gb_in_bytes: u64 = 4 * 1024 * 1024 * 1024;
-
-        let target_buffer_bytes = absolute_max_buffer.min(four_gb_in_bytes);
+        let target_buffer_bytes = absolute_max_buffer.min(desired_heap_bytes);
         let final_buffer_bytes = target_buffer_bytes & !3;
 
         let max_u32_elements = (final_buffer_bytes / 4) as u32;
