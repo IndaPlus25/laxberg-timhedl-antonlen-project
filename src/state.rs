@@ -198,7 +198,7 @@ impl State {
 
         let color_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Color LUT Buffer"),
-            size: (256 * std::mem::size_of::<[f32; 4]>()) as wgpu::BufferAddress, 
+            size: (2048 * std::mem::size_of::<[f32; 4]>()) as wgpu::BufferAddress, 
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
