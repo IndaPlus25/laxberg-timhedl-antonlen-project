@@ -386,6 +386,40 @@ impl FileFormat for ObjParser {
 
 }
 
+struct GlbParser{
+    vertices: Vec<Vertex>,
+    faces: Vec<Face>,
+    palette_manager: PaletteManager    
+}
+
+impl GlbParser {
+    fn new() -> Self {
+        Self {
+            vertices: vec![],
+            faces: vec![],
+            palette_manager: PaletteManager::new(),
+        }
+    }    
+}
+
+impl FileFormat for GlbParser {
+    fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError> {
+        todo!()
+    }
+
+    fn parse_line(&mut self, line_result: Result<String, Error>, folder: Option<&Path>) -> Result<(), FileParseError> {
+        todo!()
+    }
+
+    fn parse_vertices(&self, coordinates: &str) -> Result<Vertex, FileParseError> {
+        todo!()
+    }
+
+    fn parse_faces(&mut self, vertices: &str)  -> Result<Vec<Face>, FileParseError>  {
+        todo!()
+    }
+}
+
 fn get_file_format(path: &Path) -> Result<Box<dyn FileFormat>, FileParseError>{
     let extension = path.extension()
         .and_then(|ext| ext.to_str())
