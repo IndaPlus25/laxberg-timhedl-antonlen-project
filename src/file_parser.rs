@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Error, ErrorKind};
-use std::path::{Path};
+use std::path::{Path, PathBuf};
+use image::RgbaImage;
 
 const DEFAULT_COLOR: Vertex = Vertex {x: 1.0, y: 1.0, z: 1.0};
 
@@ -12,6 +13,12 @@ pub struct Vertex{
     pub x: f32,
     pub y: f32,
     pub z: f32,
+}
+
+impl Vertex {
+    fn to_bits(self) -> [u32; 3]{
+        [self.x.to_bits(), self.y.to_bits(), self.z.to_bits()]
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -29,6 +36,126 @@ pub struct Mesh {
     pub colors: Vec<Vertex>
 }
 
+#[derive(Debug)]
+struct PaletteManager {
+    colors: Vec<Vertex>,
+    v_textures: Vec<(f32, f32)>,
+    
+    color_name_translator: HashMap<String, usize>,
+    color_translator: HashMap<[u32; 3], usize>,
+    palette_translator: HashMap<String, String>,
+    palette_storer: HashMap<String, Option<RgbaImage>>,
+
+    current_color: String,
+    current_index: usize,
+
+    folder: PathBuf
+}
+
+impl PaletteManager {
+    fn new() -> Self {
+        Self {
+            colors: vec![DEFAULT_COLOR, DEFAULT_COLOR],
+            v_textures: vec![(0.0, 0.0)],
+
+            color_translator: HashMap::new(),
+            color_name_translator: HashMap::new(),
+            palette_translator: HashMap::new(),
+            palette_storer: HashMap::new(),
+
+            current_color: String::new(),
+            current_index: 2,
+
+            folder: PathBuf::new()
+        }
+    }
+
+    fn add_material(&mut self, name: String, color: Vertex) {
+        let parsed_color = color.clone().to_bits();
+
+        self.color_name_translator.insert(name, self.current_index);
+        self.color_translator.insert(parsed_color, self.current_index);
+        self.colors.push(color);
+
+        self.current_index += 1;
+    }
+
+    fn add_palette(&mut self, name: String, palette: String) {
+        if self.palette_translator.get(&name).is_some() {
+            return;
+        }
+
+        self.palette_translator.insert(name, palette.clone());
+
+        if self.palette_storer.get(&palette).is_some(){
+            return;
+        }
+
+        let palette_image = self.get_palette(palette.clone());
+        self.palette_storer.insert(palette, palette_image);        
+    }
+
+    fn add_color(&mut self, color: Vertex) {
+        let parsed_color = color.clone().to_bits();
+
+        if self.color_translator.get(&parsed_color).is_some(){
+            return;
+        }
+
+        self.color_translator.insert(parsed_color, self.current_index);
+        self.colors.push(color);
+
+        self.current_index += 1;
+    }
+
+    fn get_current_color(&self) -> Option<&usize>{
+        self.color_name_translator.get(&self.current_color)
+    }
+
+    fn get_current_palette(&self) -> Option<&RgbaImage>{
+        let palette_name = self.palette_translator.get(&self.current_color)?;
+        self.palette_storer.get(palette_name)?.as_ref()
+    }
+
+    fn get_index_from_color(&self, color: Vertex) -> Option<&usize> {
+        let formated_color = color.clone().to_bits();
+        self.color_translator.get(&formated_color)
+    }
+
+    fn get_palette(&self, palette: String) -> Option<RgbaImage> {
+        match self.palette_storer.get(&palette) {
+            Some(cached) => cached.as_ref().cloned(),
+            None => {
+                let mut folder = self.folder.clone();
+                folder.push(PathBuf::from(palette));
+
+                match image::open(folder) {
+                    Ok(img) => Some(img.into_rgba8()),
+                    Err(_) => None,
+                }
+            }
+        }
+    }
+
+    fn get_color_from_position(img: &RgbaImage, position: (f32, f32)) -> Vertex {
+        let (width, height) = img.dimensions();
+
+        let pixel_x = (position.0 * width as f32).floor() as u32;
+        let pixel_y = ((1.0 - position.1) * height as f32).floor() as u32;
+
+        let safe_x = pixel_x.clamp(0, width - 1);
+        let safe_y = pixel_y.clamp(0, height - 1);
+
+        let pixel = img.get_pixel(safe_x, safe_y);
+
+        Vertex {
+            x: pixel[0] as f32 / 255.0,
+            y: pixel[1] as f32 / 255.0,
+            z: pixel[2] as f32 / 255.0,
+        }
+    }
+}
+
 trait FileFormat{
     fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError>;
 
@@ -36,15 +163,13 @@ trait FileFormat{
 
     fn parse_vertices(&self, coordinates: &str) -> Result<Vertex, FileParseError>;
 
-    fn parse_faces(&self, vertices: &str)  -> Result<Vec<Face>, FileParseError> ;
+    fn parse_faces(&mut self, vertices: &str)  -> Result<Vec<Face>, FileParseError> ;
 } 
 
 struct ObjParser{
     vertices: Vec<Vertex>,
     faces: Vec<Face>,
-    colors: Vec<Vertex>, 
-    color_translator: HashMap<String, usize>,
-    current_color: String,
+    palette_manager: PaletteManager
 }
 
 impl ObjParser {
@@ -52,20 +177,22 @@ impl ObjParser {
         Self {
             vertices: vec![],
             faces: vec![],
-            colors: vec![DEFAULT_COLOR, DEFAULT_COLOR],
-            current_color: String::new(),
-            color_translator: HashMap::new(),
+            palette_manager: PaletteManager::new(),
         }
     }
 
-    fn parse_face_obj_format(part: Option<&str>) -> Result<usize, FileParseError> {
+    fn parse_face_obj_format(part: Option<&str>) -> Result<(usize, Option<usize>), FileParseError> {
         let Some(point_data) = part else {
             return Err(FileParseError::MissingData);
         };
 
-        let Some(point_str) = point_data.split('/').next() else {
+        let mut parts = point_data.split('/');
+
+        let Some(point_str) = parts.next() else {
             return Err(FileParseError::MissingPoint);
         };
+
+        let texture = parts.next().and_then(|s| s.parse::<usize>().ok());
 
         let Ok(parsed_point) = point_str.parse::<usize>() else {
             return Err(FileParseError::InvalidDataType(point_str.to_string()));
@@ -75,7 +202,7 @@ impl ObjParser {
             return Err(FileParseError::DataOutOfBounds(parsed_point));
         };
 
-        Ok(point)
+        Ok((point, texture))
     }
 
     fn parse_vertex_obj_format(part: Option<&str>) -> Result<f32, FileParseError> { 
@@ -90,13 +217,10 @@ impl ObjParser {
         Ok(coordinate)
     }
 
-    fn parse_color_file(&mut self, file: &File) -> Result<HashMap<String, usize>, FileParseError>{
+    fn parse_color_file(&mut self, file: &File) -> Result<(), FileParseError>{
         let reader = BufReader::new(file);
 
-        let mut colors: Vec<Vertex> = Vec::new();
-        let mut color_hash: HashMap<String, usize> = HashMap::new();
-        let mut current_material = String::new(); 
-        let mut current_material_id = self.colors.len();
+        let mut current_material = String::new();
 
         let gamma: f32 = 2.2;
         let inverse_gamma = 1.0 / gamma;
@@ -109,45 +233,53 @@ impl ObjParser {
                 x if x.starts_with("kd ") => {
                     let color = x[3..].trim();
 
-                    match self.parse_vertices(color) {
-                        Ok(v) => {
-                            let color = Vertex {
-                                x: v.x.powf(inverse_gamma),
-                                y: v.y.powf(inverse_gamma),
-                                z: v.z.powf(inverse_gamma),
-                            };
+                    let vertex = self.parse_vertices(color)?;
+                    let parsed_color = Vertex {
+                        x: vertex.x.powf(inverse_gamma),
+                        y: vertex.y.powf(inverse_gamma),
+                        z: vertex.z.powf(inverse_gamma),
+                    };
 
-                            colors.push(color);
-                            color_hash.insert(current_material.clone(), current_material_id);
-
-                            current_material_id += 1;
-                        },
-                        Err(e) => {return Err(e);}
-                    }
+                    self.palette_manager.add_material(current_material.clone(), parsed_color);
                 },
+                x if x.starts_with("map_kd ") => {
+                    let palette = line[7..].trim();
+
+                    self.palette_manager.add_palette(current_material.clone(), palette.to_string());
+                }
                 _ => {}
             }
         }
 
-        self.colors.append(&mut colors); 
+        Ok(())
+    }
 
-        Ok(color_hash)
+    fn parse_v_texture(coordinates: &str) -> Result<(f32, f32), FileParseError> {
+        let mut parts = coordinates.split_whitespace();
+
+        let x =  ObjParser::parse_vertex_obj_format(parts.next())?;
+        let y = ObjParser::parse_vertex_obj_format(parts.next())?;
+
+        Ok((x, y))
     }
 }
 
 impl FileFormat for ObjParser { 
     fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError> {
+        if let Some(folder) = folder {
+            self.palette_manager.folder = folder.to_path_buf()
+        }        
+        
         for (i, line_result) in reader.lines().enumerate(){
             match self.parse_line(line_result, folder) {
                 Ok(_) => {},
                 Err(error) => {return Err(FileParseError::FailedLineParse(i, Box::new(error)));}
             }
         }  
-
         let mesh = Mesh {
             vertices: std::mem::take(&mut self.vertices),
             faces: std::mem::take(&mut self.faces),
-            colors: std::mem::take(&mut self.colors),
+            colors: std::mem::take(&mut self.palette_manager.colors),
         };
 
         Ok(mesh)
@@ -174,29 +306,31 @@ impl FileFormat for ObjParser {
                     Err(e) => {return Err(e);}
                 }
             },
-            x if x.starts_with("mtllib ") => {
-                let color_scheme_path = x[7..].trim();
+            x if x.starts_with("vt ") => {
+                let coordinates = x[3..].trim();
 
-                if let Some(folder_path) = folder{
-                    let full_path = folder_path.join(color_scheme_path);
-
-                    let color_file = match File::open(full_path){
-                        Ok(file) => file,
-                        Err(_) => return Ok(()),
-                    };
-
-                    match self.parse_color_file(&color_file){
-                        Ok(color_hash) => self.color_translator = color_hash,
-                        Err(_) => {
-                            return Ok(())
-                        },
-                    };
-
-                    println!("{:?}", self.color_translator)
+                match ObjParser::parse_v_texture(coordinates) {
+                    Ok(v) => self.palette_manager.v_textures.push(v),
+                    Err(e) => {return Err(e);}
                 }
             },
+            x if x.starts_with("mtllib ") => {
+                let color_scheme_path = trimmed_line[7..].trim();
+
+                let full_path = match folder{
+                    Some(folder_path) => folder_path.join(color_scheme_path),
+                    None => PathBuf::from(color_scheme_path),
+                };
+
+                let color_file = match File::open(full_path){
+                    Ok(file) => file,
+                    Err(_) => return Ok(()),
+                };
+
+                self.parse_color_file(&color_file)?;
+            },
             x if x.starts_with("usemtl ") => {
-                self.current_color = x[7..].trim().to_string();
+                self.palette_manager.current_color = x[7..].trim().to_string();
             }
             _ => {},
         }
@@ -214,31 +348,40 @@ impl FileFormat for ObjParser {
         Ok(Vertex { x, y, z })
     }
 
-    fn parse_faces(&self, vertices: &str)  -> Result<Vec<Face>, FileParseError> {
+    fn parse_faces(&mut self, vertices: &str)  -> Result<Vec<Face>, FileParseError> {
         let mut parts = vertices.split_whitespace();
 
-        let a = ObjParser::parse_face_obj_format(parts.next())?;
-        let b = ObjParser::parse_face_obj_format(parts.next())?;
-        let c = ObjParser::parse_face_obj_format(parts.next())?;
+        let (a, texture_a) = ObjParser::parse_face_obj_format(parts.next())?;
+        let (b, texture_b) = ObjParser::parse_face_obj_format(parts.next())?;
+        let (c, texture_c) = ObjParser::parse_face_obj_format(parts.next())?;
 
-        let color = match self.color_translator.get(&self.current_color) {
-            Some(color) => color,
-            None => &1,
+        let (d, texture_d) = match ObjParser::parse_face_obj_format(parts.next()) {
+            Ok((d, texture_d)) => (Some(d), texture_d),
+            Err(_) => (None, None),
         };
+        let first_some = texture_a.or(texture_b).or(texture_c).or(texture_d);
 
-        match ObjParser::parse_face_obj_format(parts.next()) {
-            Ok(d) => {
-                return Ok(vec![
-                    Face {v1: a, v2: b, v3: c, color_id: color.clone()},
-                    Face {v1: a, v2: c, v3: d, color_id: color.clone()},   
-                ])
-            }
-            Err(_) => {}
-        };
+        let mut color_id: usize = self.palette_manager.get_current_color().copied().unwrap_or(1);
 
-        Ok(vec![
-            Face {v1: a, v2: b, v3: c, color_id: color.clone()}
-        ])
+        if let (Some(point), Some(palette_image)) = (first_some, self.palette_manager.get_current_palette()){
+            let position = self.palette_manager.v_textures[point];
+
+            let color = PaletteManager::get_color_from_position(&palette_image, position);
+            self.palette_manager.add_color(color.clone());
+
+            color_id = self.palette_manager.get_index_from_color(color).unwrap_or(&1).to_owned();
+        }
+
+        if let Some(d) = d {
+            Ok(vec![
+                Face { v1: a, v2: b, v3: c, color_id },
+                Face { v1: a, v2: c, v3: d, color_id },   
+            ])
+        } else {
+            Ok(vec![
+                Face { v1: a, v2: b, v3: c, color_id }
+            ])
+        }
     }
 
 }
