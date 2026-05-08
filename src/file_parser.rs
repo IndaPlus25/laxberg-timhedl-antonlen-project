@@ -104,6 +104,8 @@ impl PaletteManager {
 
         self.color_translator.insert(parsed_color, self.current_index);
         self.colors.push(color);
+
+        self.current_index += 1;
     }
 
     fn get_current_color(&self) -> Option<&usize>{
