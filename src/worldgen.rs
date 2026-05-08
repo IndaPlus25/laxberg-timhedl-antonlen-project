@@ -12,6 +12,12 @@ struct BiomeNoise {
     mountains: Fbm<Perlin>
 }
 
+pub struct BlockColors {
+    pub grass: u32,
+    pub stone: u32,
+    pub water: u32,
+}
+
 impl BiomeNoise {
     fn new(seed: u32) -> Self {
         Self {
@@ -41,7 +47,7 @@ fn biome_height_limit(biome: Biome, pos: [f64; 2], functions: &BiomeNoise) -> f6
     base_height + (normalised * height_diff)
 }
 
-pub fn generate_single_chunk(color: u32, seed: u32, chunk_coord: &V3i) -> Vec<u32> {
+pub fn generate_single_chunk(colors: &BlockColors, seed: u32, chunk_coord: &V3i) -> Vec<u32> {
     let mut flat_data = vec![0; 32768];
     let functions = BiomeNoise::new(seed);
     let simplex = Simplex::new(seed);
@@ -64,6 +70,13 @@ pub fn generate_single_chunk(color: u32, seed: u32, chunk_coord: &V3i) -> Vec<u3
 
                 let global_y = chunk_coord.y * 32 + dy;
                 if global_y <= global_y_limit {
+                    let color = if biome_noise > 0.2 {
+                        colors.stone
+                    } else if global_y <= 0 {
+                        colors.water
+                    } else {
+                        colors.grass
+                    };
                     flat_data[index as usize] = color;
                 }
             }
