@@ -136,6 +136,24 @@ impl PaletteManager {
             }
         }
     }
+
+    fn get_color_from_position(img: &RgbaImage, position: (f32, f32)) -> Vertex {
+        let (width, height) = img.dimensions();
+
+        let pixel_x = (position.0 * width as f32).floor() as u32;
+        let pixel_y = ((1.0 - position.1) * height as f32).floor() as u32;
+
+        let safe_x = pixel_x.clamp(0, width - 1);
+        let safe_y = pixel_y.clamp(0, height - 1);
+
+        let pixel = img.get_pixel(safe_x, safe_y);
+
+        Vertex {
+            x: pixel[0] as f32 / 255.0,
+            y: pixel[1] as f32 / 255.0,
+            z: pixel[2] as f32 / 255.0,
+        }
+    }
 }
 
 trait FileFormat{
