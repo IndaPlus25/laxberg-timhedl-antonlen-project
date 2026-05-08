@@ -19,15 +19,15 @@ The renderer is the second part that will take the loaded file as voxels, displa
   - Be able to load the interpreted file into the renderer
   - Be able to display voxels in different colors
 - Should have
-  - Be able to raytrace specular voxels
+  - GPU renderer instead of CPU
   - Move around in environment
   - Saving and loading files
 - Nice to have
-  - Raytracer +, more materials( glass, roughness, water )
-  - GPU renderer instead of CPU
+  - Raytracer, materials, global and local illumination
+  - multithreaded obj interpretation  
   - Basic world generation
 - A finished project
-  - Raytracer ++, Real time, complex raytracer (god rays, etc)
+  - Raytracer +, Real time, complex raytracer (glass, roughness, water, god rays, etc)
   - Real time changes to the environment
   - complex world generation
 - This would break reality
@@ -39,11 +39,11 @@ The renderer is the second part that will take the loaded file as voxels, displa
 
 ## Pace 
 
-Minimum viable product - Friday Tenta P - V15
+Minimum viable product - Friday After Tenta P - V16
 
-Should have - Friday After Tenta P - V16
+Should have - Friday V18
 
-Nice to have - Friday V18
+Nice to have - Friday V19
 
 Finished project - Friday V20
 
@@ -53,18 +53,19 @@ Reality broken! - If we have more time
 
 ## Work deligation
 
-- Minimum viable product
-  - Be able to interpret a OBJ file or other 3D file type
+- (Done) Minimum viable product
+  - Be able to interpret a OBJ file or other 3D file type: **Anton - (Done)**
+
+  - Be able to load the interpreted file into the renderer: **Lucas - (Done)**
     
-    Anton
-  - Be able to load the interpreted file into the renderer
+  - Be able to display voxels in different colors: **Tim - (Done)**
     
-    Lucas
-  - Be able to display voxels in different colors
+- Should have
+  - GPU renderer instead of CPU: **Tim**
+
+  - Move around in environment: **Lucas**
   
-    Tim
-    
-- Should have - TBD
+  - Saving and loading files: **Anton** 
 
 - Nice to have - TBD
 
@@ -73,4 +74,3 @@ Reality broken! - If we have more time
 - This would break reality - TBD
 
 - Reality broken! - TBD
-

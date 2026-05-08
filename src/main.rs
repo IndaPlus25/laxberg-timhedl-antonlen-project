@@ -46,6 +46,8 @@ struct Lighting {
     sun_direction: V3,
     ambient_strength: f32,
     sky_color: [f32; 4],
+    time: f32,
+    time_scale: f32,
 }
 
 struct KeyPresses {
@@ -206,17 +208,15 @@ impl ApplicationHandler<CliCommand> for App {
                     //println!("x: {}, y: {}, z: {}", self.player.position.x, self.player.position.y, self.player.position.z);
                 }
                 //=============================
-
+                //movement
                 let delta_time = Instant::now().duration_since(self.last_redraw).as_secs_f32();
                 let mut move_speed = 10.0;
                 let rot_speed = std::f32::consts::FRAC_PI_2 * 1.5;
                 self.last_redraw = Instant::now();
-
                 // Shift
                 if self.key_presses.Shift {
                     move_speed *= 10.0;
                 }
-
 
                 // WASD movement
                 if self.key_presses.W {
@@ -253,8 +253,22 @@ impl ApplicationHandler<CliCommand> for App {
                 if self.key_presses.Right {
                     self.player.rotate_yaw(rot_speed * delta_time);
                 }
+                //=============================
+                //Time 
+                self.lighting.time += self.lighting.time_scale * delta_time;
 
-            
+                if self.lighting.time > Player::TWO_PI {
+                    self.lighting.time -= Player::TWO_PI;
+                }
+
+                let raw_sun_dir = V3 {
+                    x: self.lighting.time.cos(),
+                    y: self.lighting.time.sin(),
+                    z: 0.3, 
+                };
+
+                self.lighting.sun_direction = vec_normalize(&raw_sun_dir);
+
             }
             WindowEvent::Resized(size) => {
                 // Reconfigures the size of the surface. We do not re-render
@@ -360,7 +374,6 @@ fn main() {
 
     let chunks = HashMap::new();
     let colours = vec![DEFAULT_COLOR, DEFAULT_COLOR];
-
     let player = Player {
         position: V3{
             x: 32.0*2.0,
@@ -372,9 +385,11 @@ fn main() {
     };
 
     let lighting = Lighting { 
-        sun_direction: V3{x: -0.5, y: 0.8, z: 0.3},
+        sun_direction: V3{x: 0.0, y: 1.0, z: 0.0},
         ambient_strength: 0.2,
         sky_color: [0.5, 0.7, 1.0, 1.0],
+        time_scale: 0.01,
+        time: 0.8,
     };
 
     let mut app = App {
