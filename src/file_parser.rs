@@ -107,15 +107,17 @@ impl PaletteManager {
     }
 
     fn get_current_color(&self) -> Option<&usize>{
-        todo!()
+        self.color_name_translator.get(&self.current_color)
     }
 
-    fn get_current_palette(&self) -> Option<&String>{
-        todo!()
+    fn get_current_palette(&self) -> Option<&RgbaImage>{
+        let palette_name = self.palette_translator.get(&self.current_color)?;
+        self.palette_storer.get(palette_name)?.as_ref()
     }
 
     fn get_index_from_color(&self, color: Vertex) -> Option<&usize> {
-        todo!()
+        let formated_color = color.clone().to_bits();
+        self.color_translator.get(&formated_color)
     }
 
     fn get_palette(&self, palette: String) -> Option<RgbaImage> {
