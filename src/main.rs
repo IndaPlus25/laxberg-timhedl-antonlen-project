@@ -358,7 +358,7 @@ fn main() {
         }
     });
 
-    let chunks = to_chunks(&generate_random_world(3200, 3200, 32, 0.9, 1));//HashMap::new();
+    let chunks = HashMap::new();
     let colours = vec![DEFAULT_COLOR, DEFAULT_COLOR];
 
     let player = Player {
