@@ -2,13 +2,50 @@ use rand::RngExt;
 use noise::{Fbm, MultiFractal, NoiseFn, Perlin};
 use crate::vecmath::V3i;
 
+enum Biome {
+    Plains,
+    Mountains,
+}
+
+struct BiomeNoise {
+    plains: Fbm<Perlin>,
+    mountains: Fbm<Perlin>
+}
+
+impl BiomeNoise {
+    fn new(seed: u32) -> Self {
+        Self {
+            plains: Fbm::<Perlin>::new(seed)
+                .set_octaves(2)
+                .set_frequency(0.01)
+                .set_persistence(0.3),
+            mountains: Fbm::<Perlin>::new(seed)
+                .set_octaves(6)
+                .set_frequency(0.005)
+                .set_persistence(0.6),
+        }
+    }
+}
+
+fn biome_height_limit(biome: Biome, pos: [f64; 2], functions: &BiomeNoise) -> f64{
+    let (noise_value, base_height, height_diff) = match biome {
+        Biome::Plains => {
+            (functions.plains.get(pos), 40.0, 10.0)
+        },
+        Biome::Mountains => {
+            (functions.mountains.get(pos), 64.0, 90.0)
+        },
+    };
+
+    let normalised = ((noise_value + 1.0) / 2.0).clamp(0.0, 1.0);
+    base_height + (normalised * height_diff)
+}
 
 pub fn generate_single_chunk(color: u32, seed: u32, chunk_coord: &V3i) -> Vec<u32> {
     let mut flat_data = vec![0; 32768];
-    let fbm = Fbm::<Perlin>::new(seed)
-        .set_octaves(6)
-        .set_frequency(0.003)
-        .set_persistence(0.6);
+    let functions = BiomeNoise::new(seed);
+    let perlin = Perlin::new(seed);
+    let biome_closeness = 0.001;
 
     for dx in 0..32 {
         for dz in 0..32 {
@@ -16,10 +53,11 @@ pub fn generate_single_chunk(color: u32, seed: u32, chunk_coord: &V3i) -> Vec<u3
             let global_x = chunk_coord.x * 32 + dx;
             let global_z = chunk_coord.z * 32 + dz;
 
-            let noise_value = fbm.get([global_x as f64, global_z as f64]);
-            let normalized_noise = ((noise_value + 1.0) / 2.0).clamp(0.0, 1.0);
+            let biome_noise = perlin.get([biome_closeness * global_x as f64, biome_closeness * global_z as f64]);
+            let plains_limit = biome_height_limit(Biome::Plains, [global_x as f64, global_z as f64], &functions);
+            let mountains_limit = biome_height_limit(Biome::Mountains, [global_x as f64, global_z as f64], &functions);
 
-            let global_y_limit = (64.0 + (normalized_noise * 90.0)) as i32;
+            let global_y_limit = ((1.0 - biome_noise) * plains_limit + biome_noise * mountains_limit) as i32; 
 
             for dy in 0..32 {
                 let index = dx + (dy * 32) + (dz * 32 * 32);
