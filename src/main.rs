@@ -35,7 +35,7 @@ use crate::state::*;
 use crate::cli::*;
 use crate::worldgen::generate_random_world;
 
-const DEFAULT_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+const DEFAULT_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 0.0];
 
 pub struct Player {
     pub position: V3,
@@ -359,7 +359,7 @@ fn main() {
     });
 
     let chunks = HashMap::new();
-    let colours = vec![DEFAULT_COLOR];
+    let colours = vec![DEFAULT_COLOR, DEFAULT_COLOR];
 
     let player = Player {
         position: V3{
