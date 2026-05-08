@@ -165,7 +165,7 @@ impl State {
             sky_color: [0.0, 0.0, 0.0, 1.0],
         };
 
-        let grid_size = render_distance * 2;
+        let grid_size = (render_distance * 2 + 1).next_power_of_two();
         let indexer_size = grid_size * grid_size * grid_size;
 
         let pixel_count = (size.width * size.height) as wgpu::BufferAddress;
@@ -334,7 +334,7 @@ impl State {
         let local_x = chunk_pos.x.rem_euclid(self.grid_size as i32) as u32;
         let local_y = chunk_pos.y.rem_euclid(self.grid_size as i32) as u32;
         let local_z = chunk_pos.z.rem_euclid(self.grid_size as i32) as u32;
-        
+
         let morton_idx = crate::builder::get_morton_index(local_x, local_y, local_z);  
         let indexer_byte_offset = (morton_idx as u64) * 4;
 
