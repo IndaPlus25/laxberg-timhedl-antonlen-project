@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Error, ErrorKind};
-use std::path::{Path};
+use std::path::{Path, PathBuf};
+use image::RgbaImage;
 
 const DEFAULT_COLOR: Vertex = Vertex {x: 1.0, y: 1.0, z: 1.0};
 
@@ -12,6 +13,12 @@ pub struct Vertex{
     pub x: f32,
     pub y: f32,
     pub z: f32,
+}
+
+impl Vertex {
+    fn to_bits(self) -> [u32; 3]{
+        [self.x.to_bits(), self.y.to_bits(), self.z.to_bits()]
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -27,6 +34,65 @@ pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub faces: Vec<Face>,
     pub colors: Vec<Vertex>
+}
+
+#[derive(Debug)]
+struct PaletteManager {
+    colors: Vec<Vertex>,
+    v_textures: Vec<(f32, f32)>,
+    
+    color_name_translator: HashMap<String, usize>,
+    color_translator: HashMap<[u32; 3], usize>,
+    palette_translator: HashMap<String, String>,
+    palette_storer: HashMap<String, Option<RgbaImage>>,
+
+    current_color: String,
+    current_index: usize,
+
+    folder: PathBuf
+}
+
+impl PaletteManager {
+    fn new() -> Self {
+        Self {
+            colors: vec![DEFAULT_COLOR, DEFAULT_COLOR],
+            v_textures: vec![(0.0, 0.0)],
+
+            color_translator: HashMap::new(),
+            color_name_translator: HashMap::new(),
+            palette_translator: HashMap::new(),
+            palette_storer: HashMap::new(),
+
+            current_color: String::new(),
+            current_index: 2,
+
+            folder: PathBuf::new()
+        }
+    }
+
+    fn add_material(&mut self, name: String, color: Vertex) {
+
+    }
+
+    fn add_palette(&mut self, color: Vertex) {
+
+    }
+
+    fn add_color(&mut self, color: Vertex) {
+
+    }
+
+    fn get_current_color(&self) -> Option<&usize>{
+        todo!()
+    }
+
+    fn get_current_palette(&self) -> Option<&String>{
+        todo!()
+    }
+
+    fn get_index_from_color(&self, color: Vertex) -> Option<&usize> {
+        todo!()
+    }
 }
 
 trait FileFormat{
