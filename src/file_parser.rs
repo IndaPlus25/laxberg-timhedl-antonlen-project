@@ -71,11 +71,17 @@ impl PaletteManager {
     }
 
     fn add_material(&mut self, name: String, color: Vertex) {
+        let parsed_color = color.clone().to_bits();
 
+        self.color_name_translator.insert(name, self.current_index);
+        self.color_translator.insert(parsed_color, self.current_index);
+        self.colors.push(color);
+
+        self.current_index += 1;
     }
 
     fn add_palette(&mut self, name: String, palette: String) {
-
+        
     }
 
     fn add_color(&mut self, color: Vertex) {
