@@ -367,7 +367,7 @@ fn main() {
                         break; 
                     }
                 }
-                None => eprintln!("Unknown command: '{}'", line),
+                None => eprintln!("Unknown command: '{}', use 'help' for list of all avaliable commands", line),
             }
         }
     });
