@@ -784,7 +784,6 @@ fn shading_pass(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     // Delegate all the heavy lifting to the radiance function
     let final_rgb = shade(hit_info, ray_dir, shadow_dir, render_radius, render_diameter);
-
     textureStore(screen_texture, global_id.xy, vec4<f32>(final_rgb, lighting.sky_color.a));
 }
 

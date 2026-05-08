@@ -12,6 +12,7 @@ pub enum CliCommand {
     Load(String),
     PrintColors,
     ChangeColor{i: String, r: f32, g: f32, b: f32, a: f32}, 
+    Time{time: f32, speed: f32},
 }
 
 pub fn parse_command(input: &str) -> Option<CliCommand> {
@@ -32,6 +33,10 @@ pub fn parse_command(input: &str) -> Option<CliCommand> {
             g: g.parse().ok()?,
             b: b.parse().ok()?,
             a: a.parse().ok()?,
+        }),
+        ["time", time, speed] => Some(CliCommand::Time {
+            time: time.parse().ok()?,
+            speed: speed.parse().ok()?,
         }),
         _ => None,
     }
@@ -141,6 +146,10 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
             } else {
                 println!("Error: All color values (r, g, b, a) must be between 0.0 and 1.0.");
             }
+        },
+        CliCommand::Time { time, speed} => {
+            app.lighting.time = time;
+            app.lighting.time_scale = speed;
         }
     }
 }
