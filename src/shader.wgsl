@@ -25,6 +25,11 @@ struct Lighting {
     sky_color: vec4<f32>,
 }
 
+struct Reflection {
+    missed: bool,
+    hit_mirror: bool,
+}
+
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var screen_texture: texture_storage_2d<bgra8unorm, write>;
 @group(0) @binding(2) var<storage, read> world_data: array<u32>; 
@@ -150,7 +155,9 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
 
     if (t_min >= t_max || t_max < 0.0) { return false; }
 
-    var stack: array<StackFrame, 5>;
+    var stack: array<u32, 5>;
+
+    var stack_subs: u32 = 0u;
     var sp: i32 = 0;
 
     let root_node_data = world_data[chunk_offset];
@@ -160,13 +167,16 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
 
     let mid = (entry + exit) * 0.5;
     let root_sub_voxel = get_first_child_intersect(t_min, entry, mid);
-
-    stack[0] = StackFrame(root_node_data, root_sub_voxel);
+    
+    stack_subs = root_sub_voxel;
+    stack[0] = root_node_data;
     
     while (sp >= 0) {
+        let shift = u32(sp) * 6u;
+
         // Read current frame
-        var current_node = stack[sp].node_data;
-        var raw_sub = stack[sp].sub_voxel;
+        var current_node = stack[sp];
+        var raw_sub = (stack_subs >> shift) & 0x3Fu;
         
         let visited = (raw_sub & 16u) != 0u;
         let actual_sub = raw_sub & 15u; 
@@ -175,8 +185,8 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
         if (actual_sub > 7u) {
             sp--; 
             if (sp >= 0) {
-
-                let parent_sub = stack[sp].sub_voxel & 15u;
+                let parent_shift = u32(sp) * 6u;
+                let parent_sub = (stack_subs >> parent_shift) & 15u;
 
                 current_center.x -= select(-current_half_size, current_half_size, (parent_sub & 1u) != 0u);
                 current_center.y -= select(-current_half_size, current_half_size, (parent_sub & 2u) != 0u);
@@ -229,7 +239,7 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
                 return true;
             }
 
-            stack[sp].sub_voxel = actual_sub | 16u;
+            stack_subs |= (16u << shift);
             
             current_half_size *= 0.5;
             current_center.x += select(-current_half_size, current_half_size, (actual_sub & 1u) != 0u);
@@ -245,8 +255,11 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
             let child_mid = (sub_entry + sub_exit) * 0.5;
 
             sp++;
+            let new_shift = u32(sp) * 6u;
+            let new_sub = get_first_child_intersect(child_t_min, sub_entry, child_mid);
 
-            stack[sp] = StackFrame(node_at_index, get_first_child_intersect(child_t_min, sub_entry, child_mid));
+            stack[sp] = node_at_index;
+            stack_subs = (stack_subs & ~(0x3Fu << new_shift)) | (new_sub << new_shift);
 
             continue;
         }
@@ -257,7 +270,8 @@ fn find_intersection(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<
             select(f_mid.z, f_exit.z, (actual_sub & 4u) != 0u)
         );
 
-        stack[sp].sub_voxel = get_next_sub_voxel(actual_sub, vec_exit_plane(node_exit));
+        let next_sub = get_next_sub_voxel(actual_sub, vec_exit_plane(node_exit));
+        stack_subs = (stack_subs & ~(0x3Fu << shift)) | (next_sub << shift);
 
     }
     
@@ -288,7 +302,9 @@ fn find_intersection_anyhit(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min
 
     if (t_min >= t_max || t_max < 0.0) { return false; }
 
-    var stack: array<StackFrame, 5>;
+    var stack: array<u32, 5>;
+
+    var stack_subs: u32 = 0u;
     var sp: i32 = 0;
 
     let root_node_data = world_data[chunk_offset];
@@ -298,13 +314,16 @@ fn find_intersection_anyhit(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min
 
     let mid = (entry + exit) * 0.5;
     let root_sub_voxel = get_first_child_intersect(t_min, entry, mid);
-
-    stack[0] = StackFrame(root_node_data, root_sub_voxel);
+    
+    stack_subs = root_sub_voxel;
+    stack[0] = root_node_data;
     
     while (sp >= 0) {
+        let shift = u32(sp) * 6u;
+
         // Read current frame
-        var current_node = stack[sp].node_data;
-        var raw_sub = stack[sp].sub_voxel;
+        var current_node = stack[sp];
+        var raw_sub = (stack_subs >> shift) & 0x3Fu;
         
         let visited = (raw_sub & 16u) != 0u;
         let actual_sub = raw_sub & 15u; 
@@ -313,8 +332,8 @@ fn find_intersection_anyhit(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min
         if (actual_sub > 7u) {
             sp--; 
             if (sp >= 0) {
-
-                let parent_sub = stack[sp].sub_voxel & 15u;
+                let parent_shift = u32(sp) * 6u;
+                let parent_sub = (stack_subs >> parent_shift) & 15u;
 
                 current_center.x -= select(-current_half_size, current_half_size, (parent_sub & 1u) != 0u);
                 current_center.y -= select(-current_half_size, current_half_size, (parent_sub & 2u) != 0u);
@@ -343,7 +362,7 @@ fn find_intersection_anyhit(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min
                  return true;
             }
 
-            stack[sp].sub_voxel = actual_sub | 16u;
+            stack_subs |= (16u << shift);
             
             current_half_size *= 0.5;
             current_center.x += select(-current_half_size, current_half_size, (actual_sub & 1u) != 0u);
@@ -359,163 +378,12 @@ fn find_intersection_anyhit(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min
             let child_mid = (sub_entry + sub_exit) * 0.5;
 
             sp++;
-
-            stack[sp] = StackFrame(node_at_index, get_first_child_intersect(child_t_min, sub_entry, child_mid));
-
-            continue;
-        }
-
-        let node_exit = vec3<f32>(
-            select(f_mid.x, f_exit.x, (actual_sub & 1u) != 0u),
-            select(f_mid.y, f_exit.y, (actual_sub & 2u) != 0u),
-            select(f_mid.z, f_exit.z, (actual_sub & 4u) != 0u)
-        );
-
-        stack[sp].sub_voxel = get_next_sub_voxel(actual_sub, vec_exit_plane(node_exit));
-
-    }
-    
-    return false;
-}
-
-
-
-//Optimised for warp divergence so use something like this for shadow rays. 
-/*
-fn find_intersection_anyhit(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min: vec3<f32>, chunk_max: vec3<f32>, chunk_offset: u32, out_payload: ptr<function, u32>) -> bool {
-    var direction_mask: u32 = 0u;
-    var pos_ray_dir = ray_dir;
-    var pos_ray_origin = ray_origin;
-
-    if (pos_ray_dir.x < 0.0) { direction_mask |= 1u; pos_ray_dir.x = -pos_ray_dir.x; pos_ray_origin.x = chunk_max.x - (ray_origin.x - chunk_min.x); }
-    if (pos_ray_dir.y < 0.0) { direction_mask |= 2u; pos_ray_dir.y = -pos_ray_dir.y; pos_ray_origin.y = chunk_max.y - (ray_origin.y - chunk_min.y); }
-    if (pos_ray_dir.z < 0.0) { direction_mask |= 4u; pos_ray_dir.z = -pos_ray_dir.z; pos_ray_origin.z = chunk_max.z - (ray_origin.z - chunk_min.z); }
-
-    let safe_dir = max(pos_ray_dir, vec3<f32>(0.0000001));
-    let pos_inv_dir = vec3<f32>(1.0) / safe_dir;
-
-    let entry = (chunk_min - pos_ray_origin) * pos_inv_dir;
-    let exit = (chunk_max - pos_ray_origin) * pos_inv_dir;
-
-    let t_min = max(entry.x, max(entry.y, entry.z));
-    let t_max = min(exit.x, min(exit.y, exit.z));
-
-    if (t_min >= t_max || t_max < 0.0) { return false; }
-
-    let root_node_data = world_data[chunk_offset];
-    
-    var current_center = (chunk_min + chunk_max) * 0.5;
-    var current_half_size = (chunk_max.x - chunk_min.x) * 0.5; 
-
-    let mid = (entry + exit) * 0.5;
-    let root_sub_voxel = get_first_child_intersect(t_min, entry, mid);
-    
-    //ful fusk stack
-    var f0_node: u32; var f0_sub: u32;
-    var f1_node: u32; var f1_sub: u32;
-    var f2_node: u32; var f2_sub: u32;
-    var f3_node: u32; var f3_sub: u32;
-    var f4_node: u32; var f4_sub: u32;
-
-    var sp: i32 = 0; 
-
-    f0_node = root_node_data;
-    f0_sub = root_sub_voxel;
-
-    while (sp >= 0) {
-        // Read current frame
-        var current_node: u32;
-        var raw_sub: u32;
-        
-        switch sp {
-            case 0: { current_node = f0_node; raw_sub = f0_sub; }
-            case 1: { current_node = f1_node; raw_sub = f1_sub; }
-            case 2: { current_node = f2_node; raw_sub = f2_sub; }
-            case 3: { current_node = f3_node; raw_sub = f3_sub; }
-            case 4: { current_node = f4_node; raw_sub = f4_sub; }
-            default: { break; }
-        }
-        
-        let visited = (raw_sub & 16u) != 0u;
-        let actual_sub = raw_sub & 15u; 
-
-        // ASCEND
-        if (actual_sub > 7u) {
-            sp--; 
-            if (sp >= 0) {
-
-                var parent_sub: u32;
-                switch sp {
-                    case 0: { parent_sub = f0_sub; }
-                    case 1: { parent_sub = f1_sub; }
-                    case 2: { parent_sub = f2_sub; }
-                    case 3: { parent_sub = f3_sub; }
-                    case 4: { parent_sub = f4_sub; }
-                    default: { parent_sub = 0u; }
-                }
-                
-                parent_sub &= 15u;
-                current_center.x -= select(-current_half_size, current_half_size, (parent_sub & 1u) != 0u);
-                current_center.y -= select(-current_half_size, current_half_size, (parent_sub & 2u) != 0u);
-                current_center.z -= select(-current_half_size, current_half_size, (parent_sub & 4u) != 0u);
-                current_half_size *= 2.0;
-            }
-            continue;
-        }
-
-        let voxel_min = current_center - vec3<f32>(current_half_size);
-        let voxel_max = current_center + vec3<f32>(current_half_size);
-        let f_entry = (voxel_min - pos_ray_origin) * pos_inv_dir;
-        let f_exit = (voxel_max - pos_ray_origin) * pos_inv_dir;
-        let f_mid = (f_entry + f_exit) * 0.5;
-
-        let true_sub_voxel = actual_sub ^ direction_mask;
-        let child_exists = has_child(current_node, true_sub_voxel);
-        
-        // DECEND
-        if (!visited && child_exists) {
-            let pointer = get_ending(current_node);
-            let child_index = pointer + child_pop_count(current_node, true_sub_voxel);
-            let node_at_index = world_data[chunk_offset + child_index];
-
-            if (is_leaf(current_node, true_sub_voxel)) {
-                //out_payload = get_ending(node_at_index);
-                return true;
-            }
-
-            let visited_sub = actual_sub | 16u;
-            switch sp {
-                case 0: { f0_sub = visited_sub; }
-                case 1: { f1_sub = visited_sub; }
-                case 2: { f2_sub = visited_sub; }
-                case 3: { f3_sub = visited_sub; }
-                case 4: { f4_sub = visited_sub; }
-                default: {}
-            }
-            
-            current_half_size *= 0.5;
-            current_center.x += select(-current_half_size, current_half_size, (actual_sub & 1u) != 0u);
-            current_center.y += select(-current_half_size, current_half_size, (actual_sub & 2u) != 0u);
-            current_center.z += select(-current_half_size, current_half_size, (actual_sub & 4u) != 0u);
-
-            let child_voxel_min = current_center - vec3<f32>(current_half_size);
-            let child_voxel_max = current_center + vec3<f32>(current_half_size);
-            let sub_entry = (child_voxel_min - pos_ray_origin) * pos_inv_dir;
-            let sub_exit = (child_voxel_max - pos_ray_origin) * pos_inv_dir;
-            
-            let child_t_min = max(sub_entry.x, max(sub_entry.y, sub_entry.z));
-            let child_mid = (sub_entry + sub_exit) * 0.5;
-
-            sp++;
+            let new_shift = u32(sp) * 6u;
             let new_sub = get_first_child_intersect(child_t_min, sub_entry, child_mid);
-            switch sp {
-                case 0: { f0_node = node_at_index; f0_sub = new_sub; }
-                case 1: { f1_node = node_at_index; f1_sub = new_sub; }
-                case 2: { f2_node = node_at_index; f2_sub = new_sub; }
-                case 3: { f3_node = node_at_index; f3_sub = new_sub; }
-                case 4: { f4_node = node_at_index; f4_sub = new_sub; }
-                default: {}
-            }
+
+            stack[sp] = node_at_index;
+            stack_subs = (stack_subs & ~(0x3Fu << new_shift)) | (new_sub << new_shift);
+
             continue;
         }
 
@@ -524,21 +392,14 @@ fn find_intersection_anyhit(ray_origin: vec3<f32>, ray_dir: vec3<f32>, chunk_min
             select(f_mid.y, f_exit.y, (actual_sub & 2u) != 0u),
             select(f_mid.z, f_exit.z, (actual_sub & 4u) != 0u)
         );
-        let next_sub = get_next_sub_voxel(actual_sub, vec_exit_plane(node_exit));
 
-        switch sp {
-            case 0: { f0_sub = next_sub; }
-            case 1: { f1_sub = next_sub; }
-            case 2: { f2_sub = next_sub; }
-            case 3: { f3_sub = next_sub; }
-            case 4: { f4_sub = next_sub; }
-            default: {}
-        }
+        let next_sub = get_next_sub_voxel(actual_sub, vec_exit_plane(node_exit));
+        stack_subs = (stack_subs & ~(0x3Fu << shift)) | (next_sub << shift);
+
     }
     
     return false;
 }
-*/
 
 // ==========================================
 // 5. MAKRO-TRAVERSERING (cast_ray octree.rs)
@@ -553,26 +414,31 @@ fn expand_bits(v: u32) -> u32 {
     return x;
 }
 
-fn get_chunk_root_pointer(chunk_pos: vec3<i32>, offset: i32, grid_size: i32) -> u32 {
-    let gx = chunk_pos.x + offset;
-    let gy = chunk_pos.y + offset;
-    let gz = chunk_pos.z + offset;
-    
-    if (gx >= 0 && gx < grid_size && gy >= 0 && gy < grid_size && gz >= 0 && gz < grid_size) {
-        
-        let morton_x = expand_bits(u32(gx));
-        let morton_y = expand_bits(u32(gy));
-        let morton_z = expand_bits(u32(gz));
-        
-        let grid_index = morton_x | (morton_y << 1u) | (morton_z << 2u);
-        
-        return world_data[grid_index];
+fn get_chunk_root_pointer(chunk_pos: vec3<i32>, render_radius: i32, render_diameter: i32) -> u32 {
+    let cam_chunk = vec3<i32>(floor(camera.position / 32.0));
+    let dist_x = abs(chunk_pos.x - cam_chunk.x);
+    let dist_y = abs(chunk_pos.y - cam_chunk.y);
+    let dist_z = abs(chunk_pos.z - cam_chunk.z);
+
+    if (dist_x >= render_radius || dist_y >= render_radius || dist_z >= render_radius) {
+        return 0xFFFFFFFFu; 
     }
+
+    var local_pos = chunk_pos % vec3<i32>(render_diameter);
+    if (local_pos.x < 0) { local_pos.x += render_diameter; }
+    if (local_pos.y < 0) { local_pos.y += render_diameter; }
+    if (local_pos.z < 0) { local_pos.z += render_diameter; }
     
-    return 0xFFFFFFFFu;
+    let morton_x = expand_bits(u32(local_pos.x));
+    let morton_y = expand_bits(u32(local_pos.y));
+    let morton_z = expand_bits(u32(local_pos.z));
+    
+    let grid_index = morton_x | (morton_y << 1u) | (morton_z << 2u);
+    
+    return world_data[grid_index];
 }
 
-fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: ptr<function, u32>, out_pos: ptr<function, vec3<f32>>, out_normal: ptr<function, vec3<f32>> , offset: i32, render_diameter: i32) -> bool {
+fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: ptr<function, u32>, out_pos: ptr<function, vec3<f32>>, out_normal: ptr<function, vec3<f32>>, render_radius: i32, render_diameter: i32) -> bool {
     let chunk_size = 32.0;
     var chunk_pos = vec3<i32>(floor(origin / chunk_size));
     
@@ -618,7 +484,7 @@ fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: pt
 
     // DDA LOOPEN
     for (var i = 0u; i < limit; i++) {
-        let chunk_root_ptr = get_chunk_root_pointer(chunk_pos, offset, render_diameter);
+        let chunk_root_ptr = get_chunk_root_pointer(chunk_pos, render_radius, render_diameter);
         
         if (chunk_root_ptr != 0xFFFFFFFFu) {
             let chunk_min = vec3<f32>(chunk_pos) * chunk_size;
@@ -642,7 +508,7 @@ fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: pt
     return false;
 }
 
-fn cast_ray_anyhit(origin: vec3<f32>, direction: vec3<f32>, limit: u32, offset: i32, render_diameter: i32) -> bool {
+fn cast_ray_anyhit(origin: vec3<f32>, direction: vec3<f32>, limit: u32, render_radius: i32, render_diameter: i32) -> bool {
     let chunk_size = 32.0;
     var chunk_pos = vec3<i32>(floor(origin / chunk_size));
     
@@ -683,7 +549,7 @@ fn cast_ray_anyhit(origin: vec3<f32>, direction: vec3<f32>, limit: u32, offset: 
     }
     
     for (var i = 0u; i < limit; i++) {
-        let chunk_root_ptr = get_chunk_root_pointer(chunk_pos, offset, render_diameter);
+        let chunk_root_ptr = get_chunk_root_pointer(chunk_pos, render_radius, render_diameter);
         if (chunk_root_ptr != 0xFFFFFFFFu) {
             let chunk_min = vec3<f32>(chunk_pos) * chunk_size;
             let chunk_max = chunk_min + vec3<f32>(chunk_size);
@@ -702,6 +568,165 @@ fn cast_ray_anyhit(origin: vec3<f32>, direction: vec3<f32>, limit: u32, offset: 
         }
     }
     return false;
+}
+
+// ==========================================
+// Specific voxel checks
+// ==========================================
+
+fn is_voxel_solid(pos: vec3<f32>, render_radius: i32) -> bool {
+    let chunk_size = 32.0;
+    let chunk_pos = vec3<i32>(floor(pos / chunk_size));
+    let render_diameter = render_radius * 2;
+
+    let root_ptr = get_chunk_root_pointer(chunk_pos, render_radius, render_diameter);
+    if (root_ptr == 0xFFFFFFFFu) { return false; } // Chunk doesn't exist
+
+    var current_node = world_data[root_ptr];
+    var current_min = vec3<f32>(chunk_pos) * chunk_size;
+    var current_size = chunk_size;
+
+    for (var level = 0u; level < 6u; level++) {
+        current_size *= 0.5;
+        let center = current_min + vec3<f32>(current_size);
+
+        // Determine which of the 8 octants the point is in
+        var sub_index = 0u;
+        if (pos.x >= center.x) { sub_index |= 1u; current_min.x = center.x; }
+        if (pos.y >= center.y) { sub_index |= 2u; current_min.y = center.y; }
+        if (pos.z >= center.z) { sub_index |= 4u; current_min.z = center.z; }
+
+        // If the child is air, the point is empty
+        if (!has_child(current_node, sub_index)) { return false; }
+
+        // Move down the tree
+        let pointer = get_ending(current_node);
+        let child_idx = pointer + child_pop_count(current_node, sub_index);
+        let child_node = world_data[root_ptr + child_idx];
+
+        if (is_leaf(current_node, sub_index)) { return true; }
+        
+        current_node = child_node;
+    }
+    
+    return false;
+}
+
+// ==========================================
+// AMBIENT OCCLUSION
+// ==========================================
+
+// Unpacks the boolean mask and calculates true physical distances
+fn calculate_smooth_voxel_ao(hit_pos: vec3<f32>, hit_normal: vec3<f32>, render_radius: i32) -> f32 {
+    let block_pos = floor(hit_pos - (hit_normal * 0.005));
+    let face_center = block_pos + vec3<f32>(0.5) + (hit_normal * 0.5);
+    
+    let mask = get_neighborhood_mask(face_center, hit_normal, render_radius);
+    
+    var up = vec3<f32>(0.0, 1.0, 0.0);
+    if (abs(hit_normal.y) > 0.9) { up = vec3<f32>(1.0, 0.0, 0.0); }
+    let right = normalize(cross(hit_normal, up));
+    let top = cross(right, hit_normal);
+
+    var occlusion: f32 = 0.0;
+
+    // 1. Evaluate the "Straight Out" path (Bits 8, 9, 10)
+    let l1_hit = (mask & (1u << 8u)) != 0u;
+    let l2_hit = (mask & (1u << 9u)) != 0u;
+    let l3_hit = (mask & (1u << 10u)) != 0u;
+
+    if (l1_hit) { occlusion += 0.5; } 
+    else if (l2_hit) { occlusion += 0.3; } 
+    else if (l3_hit) { occlusion += 0.15; }
+
+    // 2. Evaluate Layer 0 (The 8 neighbors wrapping the face)
+    
+    // Extract the Cardinal (Cross) neighbors
+    let tc = (mask & (1u << 1u)) != 0u; // Top-Center
+    let ml = (mask & (1u << 3u)) != 0u; // Mid-Left
+    let mr = (mask & (1u << 4u)) != 0u; // Mid-Right
+    let bc = (mask & (1u << 6u)) != 0u; // Bot-Center
+
+    // Apply the Anti-Light-Leak rule to the Diagonals
+    let eff_states = array<bool, 8>(
+        ((mask & (1u << 0u)) != 0u) || (tc && ml), // 0: Top-Left (Blocked if Top & Left are solid)
+        tc,                                        // 1: Top-Center
+        ((mask & (1u << 2u)) != 0u) || (tc && mr), // 2: Top-Right (Blocked if Top & Right are solid)
+        ml,                                        // 3: Mid-Left
+        mr,                                        // 4: Mid-Right
+        ((mask & (1u << 5u)) != 0u) || (bc && ml), // 5: Bot-Left (Blocked if Bot & Left are solid)
+        bc,                                        // 6: Bot-Center
+        ((mask & (1u << 7u)) != 0u) || (bc && mr)  // 7: Bot-Right (Blocked if Bot & Right are solid)
+    );
+
+    let l0_offsets = array<vec3<f32>, 8>(
+        vec3<f32>(-1.0,  1.0, 0.0), vec3<f32>(0.0,  1.0, 0.0), vec3<f32>(1.0,  1.0, 0.0),
+        vec3<f32>(-1.0,  0.0, 0.0),                            vec3<f32>(1.0,  0.0, 0.0),
+        vec3<f32>(-1.0, -1.0, 0.0), vec3<f32>(0.0, -1.0, 0.0), vec3<f32>(1.0, -1.0, 0.0)
+    );
+
+    for (var i = 0u; i < 8u; i++) {
+        // We use the effective state instead of checking the raw mask again
+        if (eff_states[i]) {
+            let local_offset = l0_offsets[i];
+            let neighbor_center = face_center + (right * local_offset.x) + (top * local_offset.y);
+            
+            // The distance is still calculated physically to maintain smooth gradients!
+            let dist = distance(hit_pos, neighbor_center);
+            let impact = clamp(1.5 - dist, 0.0, 1.0) * 0.25; 
+            
+            occlusion += impact;
+        }
+    }
+
+    return clamp(1.0 - occlusion, 0.0, 1.0);
+}
+
+
+// Checks a custom footprint of neighbors and packs them into a single u32
+fn get_neighborhood_mask(face_center: vec3<f32>, hit_normal: vec3<f32>, render_radius: i32) -> u32 {
+    var mask: u32 = 0u;
+
+    // 1. Generate local tangent space for the face
+    var up = vec3<f32>(0.0, 1.0, 0.0);
+    if (abs(hit_normal.y) > 0.9) { up = vec3<f32>(1.0, 0.0, 0.0); }
+    let right = normalize(cross(hit_normal, up));
+    let top = cross(right, hit_normal);
+
+    // 2. Define the Neighborhood Blueprint (Right, Top, Normal)
+    // 1.0 = 1 Voxel width. You can easily add or remove coordinates here.
+    let offsets = array<vec3<f32>, 11>(
+        // LAYER 0: Base circle around the face (Diameter 3 / 8 voxels)
+        vec3<f32>(-1.0,  1.0,  0.0), vec3<f32>( 0.0,  1.0,  0.0), vec3<f32>( 1.0,  1.0,  0.0), // Top row
+        vec3<f32>(-1.0,  0.0,  0.0),                              vec3<f32>( 1.0,  0.0,  0.0), // Mid row (Center is our face)
+        vec3<f32>(-1.0, -1.0,  0.0), vec3<f32>( 0.0, -1.0,  0.0), vec3<f32>( 1.0, -1.0,  0.0), // Bot row
+
+        // LAYER 1: 1 Voxel straight out (Normal direction)
+        vec3<f32>( 0.0,  0.0,  1.0),
+
+        // LAYER 2: 2 Voxels straight out
+        vec3<f32>( 0.0,  0.0,  2.0),
+
+        // LAYER 3: 3 Voxels straight out
+        vec3<f32>( 0.0,  0.0,  3.0)
+    );
+
+    // 3. Query the SVO and pack the booleans
+    for (var i = 0u; i < 11u; i++) {
+        let local_offset = offsets[i];
+        
+        // boundary and into the dead-center of the target voxel.
+        let check_pos = face_center + (hit_normal * 0.5) 
+                      + (right * local_offset.x) 
+                      + (top * local_offset.y) 
+                      + (hit_normal * local_offset.z);
+
+        if (is_voxel_solid(check_pos, render_radius)) {
+            mask |= (1u << i); // Flip the bit to 1 if solid
+        }
+    }
+
+    return mask;
 }
 
 // ==========================================
@@ -750,44 +775,89 @@ fn shading_pass(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let index = global_id.y * dimensions.x + global_id.x;
     let hit_info = hit_buffer[index];
 
-    var final_color = lighting.sky_color; 
-
+    let x = f32(global_id.x);
+    let y = f32(global_id.y);
+    let ray_dir = normalize(camera.top_left + (camera.delta_x * x) + (camera.delta_y * y));
     let shadow_dir = normalize(lighting.sun_direction);
-    
-    if (hit_info.did_hit == 1u) {
-        let max_index = arrayLength(&colour_lut) - 1u; 
-        var base_color = colour_lut[min(hit_info.payload, max_index)]; //fine
-        
-        let side_multiplier = get_face_multiplier(hit_info.hit_normal);
-        let dot_light = dot(hit_info.hit_normal, shadow_dir);
-        
-        if (dot_light <= 0.0) {
-            final_color = base_color * lighting.ambient_strength; //THESE HAVE THE WRONG SIDE
-        } else {
-            // Push ray slightly off surface
-            let shadow_origin = hit_info.hit_pos + (hit_info.hit_normal * 0.001);
-            let render_radius = i32(camera.render_distance);
-            
-            // Cast Shadow Ray
-            let is_occluded = cast_ray_anyhit(shadow_origin, shadow_dir, u32(render_radius * 2), render_radius, render_radius * 2);
-            
-            if (is_occluded) {
-                final_color = base_color * lighting.ambient_strength; 
-            } else {
-                final_color = base_color * side_multiplier; 
-            }
-        }
-    } else {
+    let render_radius = i32(camera.render_distance);
+    let render_diameter = render_radius * 2;
 
-            let x = f32(global_id.x);
-            let y = f32(global_id.y);
-            let ray_dir = normalize(camera.top_left + (camera.delta_x * x) + (camera.delta_y * y));
+    // Delegate all the heavy lifting to the radiance function
+    let final_rgb = shade(hit_info, ray_dir, shadow_dir, render_radius, render_diameter);
 
-            let sky_multiplier = dot(ray_dir, shadow_dir) * 0.5 + 0.5;
-            final_color = vec4<f32>(lighting.sky_color.rgb * sky_multiplier, lighting.sky_color.a);
-
-    }
-
-    textureStore(screen_texture, global_id.xy, final_color);
+    textureStore(screen_texture, global_id.xy, vec4<f32>(final_rgb, lighting.sky_color.a));
 }
 
+fn shade(initial_hit: HitData, initial_ray_dir: vec3<f32>, shadow_dir: vec3<f32>, render_radius: i32, render_diameter: i32) -> vec3<f32> {
+    
+    var hit_info = initial_hit;
+    var ray_dir = initial_ray_dir;
+    var final_rgb = vec3<f32>(0.0);
+    var ray_fraction = 1.0; 
+    let reflection_limit = 3u;
+
+    // If the primary ray hit the sky, return sky color immediately
+    if (hit_info.did_hit == 0u) {
+        let sky_multiplier = dot(ray_dir, shadow_dir) * 0.5 + 0.5;
+        return lighting.sky_color.rgb * sky_multiplier;
+    }
+
+    // Bounce Loop
+    for (var i = 0u; i < reflection_limit; i++) {
+        
+        let color_index = hit_info.payload; 
+
+        let max_index = arrayLength(&colour_lut) - 1u; 
+        let base_color_data = colour_lut[min(color_index, max_index)];
+        let base_color = base_color_data.rgb;
+
+        let reflectivity = base_color_data.a; 
+        let is_reflective = reflectivity > 0.0;
+
+        let side_multiplier = 1.0; 
+        let ao_factor = calculate_smooth_voxel_ao(hit_info.hit_pos, hit_info.hit_normal, render_radius);
+        
+        var direct_light = base_color * lighting.ambient_strength;
+        let dot_light = dot(hit_info.hit_normal, shadow_dir);
+        
+        if (dot_light > 0.0) {
+            let shadow_origin = hit_info.hit_pos + (hit_info.hit_normal * 0.005);
+            let is_occluded = cast_ray_anyhit(shadow_origin, shadow_dir, u32(render_diameter), render_radius, render_diameter);
+            if (!is_occluded) {
+                direct_light = base_color;
+            }
+        }
+        
+        direct_light = direct_light * side_multiplier * ao_factor;
+
+        let surface_contribution = direct_light * ray_fraction * (1.0 - reflectivity);
+        final_rgb += surface_contribution;
+
+        ray_fraction *= reflectivity;
+
+        if (!is_reflective || ray_fraction < 0.01) {
+            break;
+        }
+
+        ray_dir = reflect(ray_dir, hit_info.hit_normal);
+        let next_origin = hit_info.hit_pos + (hit_info.hit_normal * 0.005);
+
+        var next_payload: u32 = 0u;
+        var next_pos: vec3<f32> = vec3<f32>(0.0);
+        var next_normal: vec3<f32> = vec3<f32>(0.0);
+
+        let did_hit = cast_ray(next_origin, ray_dir, u32(render_diameter), &next_payload, &next_pos, &next_normal, render_radius, render_diameter);
+
+        if (!did_hit) {
+            let sky_multiplier = dot(ray_dir, shadow_dir) * 0.5 + 0.5;
+            final_rgb += (lighting.sky_color.rgb * sky_multiplier) * ray_fraction;
+            break;
+        }
+
+        hit_info.hit_pos = next_pos;
+        hit_info.hit_normal = next_normal;
+        hit_info.payload = next_payload;
+    }
+
+    return final_rgb;
+}
