@@ -81,7 +81,18 @@ impl PaletteManager {
     }
 
     fn add_palette(&mut self, name: String, palette: String) {
-        
+        if self.palette_translator.get(&name).is_some() {
+            return;
+        }
+
+        self.palette_translator.insert(name, palette.clone());
+
+        if self.palette_storer.get(&palette).is_some(){
+            return;
+        }
+
+        let palette_image = self.get_palette(palette.clone());
+        self.palette_storer.insert(palette, palette_image);        
     }
 
     fn add_color(&mut self, color: Vertex) {
@@ -98,6 +109,23 @@ impl PaletteManager {
 
     fn get_index_from_color(&self, color: Vertex) -> Option<&usize> {
         todo!()
+    }
+
+    fn get_palette(&self, palette: String) -> Option<RgbaImage> {
+        match self.palette_storer.get(&palette) {
+            Some(cached) => cached.as_ref().cloned(),
+            None => {
+                let mut folder = self.folder.clone();
+                folder.push(PathBuf::from(palette));
+
+                println!("{:?}", folder);
+
+                match image::open(folder) {
+                    Ok(img) => Some(img.into_rgba8()),
+                    Err(_) => None,
+                }
+            }
+        }
     }
 }
 
