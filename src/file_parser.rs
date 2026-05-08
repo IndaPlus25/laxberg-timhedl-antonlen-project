@@ -163,16 +163,12 @@ trait FileFormat{
 
     fn parse_vertices(&self, coordinates: &str) -> Result<Vertex, FileParseError>;
 
-    fn parse_faces(&self, vertices: &str)  -> Result<Vec<Face>, FileParseError> ;
+    fn parse_faces(&mut self, vertices: &str)  -> Result<Vec<Face>, FileParseError> ;
 } 
 
 struct ObjParser{
     vertices: Vec<Vertex>,
     faces: Vec<Face>,
-    colors: Vec<Vertex>, 
-    color_translator: HashMap<String, usize>,
-    current_color: String,
-
     palette_manager: PaletteManager
 }
 
@@ -181,9 +177,6 @@ impl ObjParser {
         Self {
             vertices: vec![],
             faces: vec![],
-            colors: vec![DEFAULT_COLOR, DEFAULT_COLOR],
-            current_color: String::new(),
-            color_translator: HashMap::new(),
             palette_manager: PaletteManager::new(),
         }
     }
@@ -283,11 +276,10 @@ impl FileFormat for ObjParser {
                 Err(error) => {return Err(FileParseError::FailedLineParse(i, Box::new(error)));}
             }
         }  
-
         let mesh = Mesh {
             vertices: std::mem::take(&mut self.vertices),
             faces: std::mem::take(&mut self.faces),
-            colors: std::mem::take(&mut self.colors),
+            colors: std::mem::take(&mut self.palette_manager.colors),
         };
 
         Ok(mesh)
@@ -336,11 +328,9 @@ impl FileFormat for ObjParser {
                 };
 
                 self.parse_color_file(&color_file)?;
-
-                println!("{:?}", self.color_translator)
             },
             x if x.starts_with("usemtl ") => {
-                self.current_color = x[7..].trim().to_string();
+                self.palette_manager.current_color = x[7..].trim().to_string();
             }
             _ => {},
         }
@@ -358,28 +348,40 @@ impl FileFormat for ObjParser {
         Ok(Vertex { x, y, z })
     }
 
-    fn parse_faces(&self, vertices: &str)  -> Result<Vec<Face>, FileParseError> {
+    fn parse_faces(&mut self, vertices: &str)  -> Result<Vec<Face>, FileParseError> {
         let mut parts = vertices.split_whitespace();
 
         let (a, texture_a) = ObjParser::parse_face_obj_format(parts.next())?;
         let (b, texture_b) = ObjParser::parse_face_obj_format(parts.next())?;
         let (c, texture_c) = ObjParser::parse_face_obj_format(parts.next())?;
 
+        let (d, texture_d) = match ObjParser::parse_face_obj_format(parts.next()) {
+            Ok((d, texture_d)) => (Some(d), texture_d),
+            Err(_) => (None, None),
+        };
+        let first_some = texture_a.or(texture_b).or(texture_c).or(texture_d);
+
         let mut color_id: usize = self.palette_manager.get_current_color().copied().unwrap_or(1);
 
-        match ObjParser::parse_face_obj_format(parts.next()) {
-            Ok((d, texture_d)) => {
-                return Ok(vec![
-                    Face {v1: a, v2: b, v3: c, color_id: color_id},
-                    Face {v1: a, v2: c, v3: d, color_id: color_id},   
-                ])
-            }
-            Err(_) => {}
-        };
+        if let (Some(point), Some(palette_image)) = (first_some, self.palette_manager.get_current_palette()){
+            let position = self.palette_manager.v_textures[point];
 
-        Ok(vec![
-            Face {v1: a, v2: b, v3: c, color_id: color_id}
-        ])
+            let color = PaletteManager::get_color_from_position(&palette_image, position);
+            self.palette_manager.add_color(color.clone());
+
+            color_id = self.palette_manager.get_index_from_color(color).unwrap_or(&1).to_owned();
+        }
+
+        if let Some(d) = d {
+            Ok(vec![
+                Face { v1: a, v2: b, v3: c, color_id },
+                Face { v1: a, v2: c, v3: d, color_id },   
+            ])
+        } else {
+            Ok(vec![
+                Face { v1: a, v2: b, v3: c, color_id }
+            ])
+        }
     }
 
 }
