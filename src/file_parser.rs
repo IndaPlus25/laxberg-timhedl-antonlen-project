@@ -96,7 +96,14 @@ impl PaletteManager {
     }
 
     fn add_color(&mut self, color: Vertex) {
+        let parsed_color = color.clone().to_bits();
 
+        if self.color_translator.get(&parsed_color).is_some(){
+            return;
+        }
+
+        self.color_translator.insert(parsed_color, self.current_index);
+        self.colors.push(color);
     }
 
     fn get_current_color(&self) -> Option<&usize>{
