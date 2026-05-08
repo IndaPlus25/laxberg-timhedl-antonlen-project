@@ -298,7 +298,7 @@ impl FileFormat for ObjParser {
                 }
             },
             x if x.starts_with("mtllib ") => {
-                let color_scheme_path = x[7..].trim();
+                let color_scheme_path = trimmed_line[7..].trim();
 
                 let full_path = match folder{
                     Some(folder_path) => folder_path.join(color_scheme_path),
