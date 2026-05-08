@@ -256,6 +256,15 @@ impl ObjParser {
 
         Ok(())
     }
+
+    fn parse_v_texture(coordinates: &str) -> Result<(f32, f32), FileParseError> {
+        let mut parts = coordinates.split_whitespace();
+
+        let x =  ObjParser::parse_vertex_obj_format(parts.next())?;
+        let y = ObjParser::parse_vertex_obj_format(parts.next())?;
+
+        Ok((x, y))
+    }
 }
 
 impl FileFormat for ObjParser { 
@@ -294,6 +303,14 @@ impl FileFormat for ObjParser {
 
                 match self.parse_vertices(coordinates) {
                     Ok(v) => self.vertices.push(v),
+                    Err(e) => {return Err(e);}
+                }
+            },
+            x if x.starts_with("vt ") => {
+                let coordinates = x[3..].trim();
+
+                match ObjParser::parse_v_texture(coordinates) {
+                    Ok(v) => self.palette_manager.v_textures.push(v),
                     Err(e) => {return Err(e);}
                 }
             },
