@@ -174,22 +174,18 @@ impl ObjParser {
                 x if x.starts_with("newmtl ") => current_material = x[7..].trim().to_owned(),
                 x if x.starts_with("kd ") => {
                     let color = x[3..].trim();
+                    
+                    let vertex = self.parse_vertices(color)?;
+                    let parsed_color = Vertex {
+                        x: vertex.x.powf(inverse_gamma),
+                        y: vertex.y.powf(inverse_gamma),
+                        z: vertex.z.powf(inverse_gamma),
+                    };
 
-                    match self.parse_vertices(color) {
-                        Ok(v) => {
-                            let color = Vertex {
-                                x: v.x.powf(inverse_gamma),
-                                y: v.y.powf(inverse_gamma),
-                                z: v.z.powf(inverse_gamma),
-                            };
+                    colors.push(parsed_color);
+                    color_hash.insert(current_material.clone(), current_material_id);
 
-                            colors.push(color);
-                            color_hash.insert(current_material.clone(), current_material_id);
-
-                            current_material_id += 1;
-                        },
-                        Err(e) => {return Err(e);}
-                    }
+                    current_material_id += 1;
                 },
                 _ => {}
             }
