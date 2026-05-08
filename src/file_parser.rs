@@ -429,6 +429,9 @@ fn get_file_format(path: &Path) -> Result<Box<dyn FileFormat>, FileParseError>{
         Some("obj") => {
             Ok(Box::new(ObjParser::new()))
         },
+        Some("glb") => {
+            Ok(Box::new(GlbParser::new()))
+        },
         _ => {Err(FileParseError::NotSupportedFileFormat(extension))},
     }
 }
