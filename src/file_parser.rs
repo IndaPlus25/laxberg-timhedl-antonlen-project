@@ -74,7 +74,7 @@ impl PaletteManager {
 
     }
 
-    fn add_palette(&mut self, color: Vertex) {
+    fn add_palette(&mut self, name: String, palette: String) {
 
     }
 
@@ -159,13 +159,10 @@ impl ObjParser {
         Ok(coordinate)
     }
 
-    fn parse_color_file(&mut self, file: &File) -> Result<HashMap<String, usize>, FileParseError>{
+    fn parse_color_file(&mut self, file: &File) -> Result<(), FileParseError>{
         let reader = BufReader::new(file);
 
-        let mut colors: Vec<Vertex> = Vec::new();
-        let mut color_hash: HashMap<String, usize> = HashMap::new();
-        let mut current_material = String::new(); 
-        let mut current_material_id = self.colors.len();
+        let mut current_material = String::new();
 
         let gamma: f32 = 2.2;
         let inverse_gamma = 1.0 / gamma;
@@ -185,18 +182,18 @@ impl ObjParser {
                         z: vertex.z.powf(inverse_gamma),
                     };
 
-                    colors.push(parsed_color);
-                    color_hash.insert(current_material.clone(), current_material_id);
-
-                    current_material_id += 1;
+                    self.palette_manager.add_material(current_material.clone(), parsed_color);
                 },
+                x if x.starts_with("map_kd ") => {
+                    let palette = line[7..].trim();
+
+                    self.palette_manager.add_palette(current_material.clone(), palette.to_string());
+                }
                 _ => {}
             }
         }
 
-        self.colors.append(&mut colors); 
-
-        Ok(color_hash)
+        Ok(())
     }
 }
 
@@ -252,12 +249,7 @@ impl FileFormat for ObjParser {
                     Err(_) => return Ok(()),
                 };
 
-                match self.parse_color_file(&color_file){
-                    Ok(color_hash) => self.color_translator = color_hash,
-                    Err(_) => {
-                        return Ok(())
-                    },
-                };
+                self.parse_color_file(&color_file)?;
 
                 println!("{:?}", self.color_translator)
             },
