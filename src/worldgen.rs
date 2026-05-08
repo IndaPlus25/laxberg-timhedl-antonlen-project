@@ -1,5 +1,5 @@
 use rand::RngExt; 
-use noise::{Fbm, MultiFractal, NoiseFn, Perlin};
+use noise::{Fbm, MultiFractal, NoiseFn, Perlin, Simplex};
 use crate::vecmath::V3i;
 
 enum Biome {
@@ -44,7 +44,7 @@ fn biome_height_limit(biome: Biome, pos: [f64; 2], functions: &BiomeNoise) -> f6
 pub fn generate_single_chunk(color: u32, seed: u32, chunk_coord: &V3i) -> Vec<u32> {
     let mut flat_data = vec![0; 32768];
     let functions = BiomeNoise::new(seed);
-    let perlin = Perlin::new(seed);
+    let simplex = Simplex::new(seed);
     let biome_closeness = 0.001;
 
     for dx in 0..32 {
@@ -53,17 +53,17 @@ pub fn generate_single_chunk(color: u32, seed: u32, chunk_coord: &V3i) -> Vec<u3
             let global_x = chunk_coord.x * 32 + dx;
             let global_z = chunk_coord.z * 32 + dz;
 
-            let biome_noise = perlin.get([biome_closeness * global_x as f64, biome_closeness * global_z as f64]);
+            let biome_noise = simplex.get([biome_closeness * global_x as f64, biome_closeness * global_z as f64]);
             let plains_limit = biome_height_limit(Biome::Plains, [global_x as f64, global_z as f64], &functions);
             let mountains_limit = biome_height_limit(Biome::Mountains, [global_x as f64, global_z as f64], &functions);
 
-            let global_y_limit = ((1.0 - biome_noise) * plains_limit + biome_noise * mountains_limit) as i32; 
+            let global_y_limit = ((1.0 - biome_noise) * plains_limit + (biome_noise - 0.1).clamp(0., 1.) * (biome_noise + 1.) * mountains_limit) as i32; 
 
             for dy in 0..32 {
                 let index = dx + (dy * 32) + (dz * 32 * 32);
 
                 let global_y = chunk_coord.y * 32 + dy;
-                if global_y < global_y_limit {
+                if global_y <= global_y_limit {
                     flat_data[index as usize] = color;
                 }
             }
