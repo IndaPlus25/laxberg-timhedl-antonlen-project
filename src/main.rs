@@ -24,6 +24,7 @@ use winit::{
 use std::time::Instant; 
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
+use colored::Colorize;
 
 use crate::file_handler::save_file_interface;
 use crate::vecmath::*;
@@ -32,6 +33,7 @@ use crate::builder::*;
 use crate::renderer::*;
 use crate::state::*;
 use crate::cli::*;
+use crate::worldgen::generate_random_world;
 
 const DEFAULT_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
@@ -179,6 +181,8 @@ impl ApplicationHandler<CliCommand> for App {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
+                state.process_chunk_loading(&self.player, self.render_distance, &self.chunks);
+
                 state.render(&self.player, self.render_distance, &self.colours, &self.lighting);
                 // Emits a new redraw requested event.
                 state.get_window().request_redraw();
@@ -195,13 +199,22 @@ impl ApplicationHandler<CliCommand> for App {
 
                     self.frames_this_second = 0;
                     self.last_fps_update = Instant::now();
+
+                    //println!("position");
+                    //println!("x: {}, y: {}, z: {}", self.player.position.x, self.player.position.y, self.player.position.z);
                 }
                 //=============================
 
                 let delta_time = Instant::now().duration_since(self.last_redraw).as_secs_f32();
-                let move_speed = 10.0;
+                let mut move_speed = 10.0;
                 let rot_speed = std::f32::consts::FRAC_PI_2 * 1.5;
                 self.last_redraw = Instant::now();
+
+                // Shift
+                if self.key_presses.Shift {
+                    move_speed *= 10.0;
+                }
+
 
                 // WASD movement
                 if self.key_presses.W {
@@ -225,6 +238,7 @@ impl ApplicationHandler<CliCommand> for App {
                     self.player.move_down(move_speed * delta_time);
                 }
 
+
                 if self.key_presses.Up {
                     self.player.rotate_pitch(rot_speed * delta_time);
                 }
@@ -237,6 +251,8 @@ impl ApplicationHandler<CliCommand> for App {
                 if self.key_presses.Right {
                     self.player.rotate_yaw(rot_speed * delta_time);
                 }
+
+            
             }
             WindowEvent::Resized(size) => {
                 // Reconfigures the size of the surface. We do not re-render
@@ -339,17 +355,17 @@ fn main() {
             }
         }
     });
-    
+
     let chunks = HashMap::new();
     let colours = vec![DEFAULT_COLOR];
 
     let player = Player {
         position: V3{
-            x: -60.5,
-            y: 20.1,
-            z: 0.1,
+            x: 32.0*2.0,
+            y: 32.0*2.0,
+            z: 32.0*2.0,
         },
-        // direction: (0.0, -std::f32::consts::FRAC_PI_2)               
+        //direction: (0.0, -std::f32::consts::FRAC_PI_2)               
         direction: (std::f32::consts::FRAC_PI_3, 0.0)               
     };
 
@@ -366,7 +382,8 @@ fn main() {
         frames_this_second: 0,
         player,
         current_acc_fps: 0.0,
-        render_distance: 8,
+        //använd bara 2^a render distances, ex: 4,8,16,32,64 ...
+        render_distance: 16,
         colours,
         lighting,
         key_presses: KeyPresses::new(),
