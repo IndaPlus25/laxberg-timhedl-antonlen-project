@@ -435,6 +435,18 @@ impl GlbParser {
             _ => {return;},
         };
 
+        for (vertex_value, uv_value) in vertex_positions.iter().zip(uv_values.iter()){
+            let vertex = Vertex { 
+                x: vertex_value[0], 
+                y: vertex_value[1], 
+                z: vertex_value[2], 
+                u: uv_value[0], 
+                v: uv_value[1], 
+            };
+
+            self.vertices.push(vertex);
+        }
+
     }
 }
 
