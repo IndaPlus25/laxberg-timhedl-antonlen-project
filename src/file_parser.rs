@@ -549,7 +549,13 @@ impl FileFormat for GlbParser {
             }
         }
 
-        todo!()
+        let mesh = Mesh {
+            vertices: std::mem::take(&mut self.vertices),
+            faces: std::mem::take(&mut self.faces),
+            colors: std::mem::take(&mut self.palette_manager.colors),
+        };
+
+        Ok(mesh)
     }
 }
 
