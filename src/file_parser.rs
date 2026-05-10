@@ -447,6 +447,16 @@ impl GlbParser {
             self.vertices.push(vertex);
         }
 
+        if let Some(index_iter) = reader.read_indices() {
+            let indices: Vec<u32> = index_iter.into_u32().collect();
+
+            for chunk in indices.chunks_exact(3) {
+                let v1 = chunk[0] as usize + vertex_offset;
+                let v2 = chunk[1] as usize + vertex_offset;
+                let v3 = chunk[2] as usize + vertex_offset;
+            }
+        }
+
     }
 }
 
