@@ -3,7 +3,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Error, ErrorKind, Read};
 use std::path::{Path, PathBuf};
 use gltf::buffer::Data;
-use image::RgbaImage;
+use gltf::image::Format;
+use image::{DynamicImage, RgbImage, RgbaImage};
 use gltf::{Gltf, Primitive};
 
 const DEFAULT_COLOR: Vertex = Vertex {x: 1.0, y: 1.0, z: 1.0, u: 0.0, v: 0.0};
@@ -415,6 +416,13 @@ impl GlbParser {
         let vertex_positions_op = reader.read_positions();
         let uv_values_op = reader.read_tex_coords(0).map(|v| v.into_f32());
 
+        let mut current_image_index = None;
+
+        let pbr = primitive.material().pbr_metallic_roughness();        
+        if let Some(texture_info) = pbr.base_color_texture() {
+            current_image_index = Some(texture_info.texture().source().index());
+        }
+
         let vertex_offset = self.vertices.len();
 
         let (vertex_positions, uv_values): (Vec<[f32; 3]>, Vec<[f32; 2]>) = match (vertex_positions_op, uv_values_op) {
@@ -428,7 +436,7 @@ impl GlbParser {
                 let vertices_vec: Vec<[f32; 3]> = vertecies.collect();
                 let mut uvs_vec: Vec<[f32; 2]> = uvs.collect();
 
-                uvs_vec.resize(vertices_vec.len(), [0.0, 0.0]);
+                uvs_vec.resize(vertices_vec.len(), [-1.0, -1.0]);
 
                 (vertices_vec, uvs_vec)
             },
@@ -457,6 +465,39 @@ impl GlbParser {
             }
         }
 
+    }
+
+    fn find_color(&mut self, vertecies: (usize, usize, usize), image_index: Option<usize>, images: &Vec<gltf::image::Data>) -> usize{
+        let image_data = match image_index{
+            Some(index) => &images[index],
+            None => return 1,
+        };
+
+        let rgba_image = match GlbParser::convert_gltf_to_rgba(image_data){
+            Some(image) => image,
+            None => return 1,
+        };
+
+        1
+    }
+
+    fn convert_gltf_to_rgba(data: &gltf::image::Data) -> Option<RgbaImage> {
+        let width = data.width;
+        let height = data.height;
+        
+        let pixels = data.pixels.clone(); 
+
+        match data.format {
+            Format::R8G8B8A8 => {
+                RgbaImage::from_raw(width, height, pixels)
+            }
+            Format::R8G8B8 => {
+                let rgb_img = RgbImage::from_raw(width, height, pixels)?;
+                
+                Some(DynamicImage::ImageRgb8(rgb_img).into_rgba8())
+            }
+            _ => None
+        }
     }
 }
 
