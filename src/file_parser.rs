@@ -24,6 +24,17 @@ impl Vertex {
     fn to_bits(self) -> [u32; 3]{
         [self.x.to_bits(), self.y.to_bits(), self.z.to_bits()]
     }
+
+    fn convert_to_real_color(&mut self) {
+        let gamma: f32 = 2.2;
+        let inverse_gamma = 1.0 / gamma;
+
+        self.x = self.x.powf(inverse_gamma);
+        self.y = self.y.powf(inverse_gamma);
+        self.z = self.z.powf(inverse_gamma);
+        self.u = self.u;
+        self.v = self.v;
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -462,6 +473,11 @@ impl GlbParser {
                 let v1 = chunk[0] as usize + vertex_offset;
                 let v2 = chunk[1] as usize + vertex_offset;
                 let v3 = chunk[2] as usize + vertex_offset;
+
+                let color_id = self.find_color((v1, v2, v3), current_image_index, images);
+                let triangle = Face {v1, v2, v3, color_id};
+
+                self.faces.push(triangle);
             }
         }
 
@@ -478,7 +494,29 @@ impl GlbParser {
             None => return 1,
         };
 
-        1
+        let parsed_vertecies = [self.vertices[vertecies.0].clone(), self.vertices[vertecies.1].clone(), self.vertices[vertecies.2].clone()];
+        let mut color_id: Option<usize> = None;
+
+        for vertex in parsed_vertecies{
+            if vertex.u < 0.0 || vertex.v < 0.0 {
+                continue;
+            }
+
+            let u_wrapped = vertex.u.rem_euclid(1.0);
+            let v_wrapped = vertex.v.rem_euclid(1.0);   
+
+            let mut color = PaletteManager::get_color_from_position(&rgba_image, (u_wrapped, v_wrapped));
+            color.convert_to_real_color();
+
+            self.palette_manager.add_color(color.clone());
+            color_id = self.palette_manager.get_index_from_color(color).copied();
+
+            if color_id.is_some() {
+                break;
+            }
+        }
+
+        color_id.unwrap_or(1)
     }
 
     fn convert_gltf_to_rgba(data: &gltf::image::Data) -> Option<RgbaImage> {
