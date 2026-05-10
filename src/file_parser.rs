@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader, Error, ErrorKind, Read};
 use std::path::{Path, PathBuf};
 use gltf::buffer::Data;
 use image::RgbaImage;
-use gltf::Gltf;
+use gltf::{Gltf, Primitive};
 
 const DEFAULT_COLOR: Vertex = Vertex {x: 1.0, y: 1.0, z: 1.0};
 
@@ -402,11 +402,47 @@ impl GlbParser {
 
         Ok(gltf::import_slice(&file_bytes)?)
     } 
+
+    fn parse_mesh(&mut self, primitive: Primitive<'_>, buffers: &Vec<Data>, images: &Vec<gltf::image::Data>) {
+        let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));        
+    
+        let vertex_positions_op = reader.read_positions();
+        let uv_values_op = reader.read_tex_coords(0).map(|v| v.into_f32());
+
+        let vertex_offset = self.vertices.len();
+
+        let (vertex_positions, uv_values): (Vec<[f32; 3]>, Vec<[f32; 2]>) = match (vertex_positions_op, uv_values_op) {
+            (Some(vertecies), None) => {
+                let vertices_vec: Vec<[f32; 3]> = vertecies.collect();
+                let target_len = vertices_vec.len();
+
+                (vertices_vec, vec![[0.0, 0.0]; target_len])
+            },
+            (Some(vertecies), Some(uvs)) => {
+                let vertices_vec: Vec<[f32; 3]> = vertecies.collect();
+                let mut uvs_vec: Vec<[f32; 2]> = uvs.collect();
+
+                uvs_vec.resize(vertices_vec.len(), [0.0, 0.0]);
+
+                (vertices_vec, uvs_vec)
+            },
+            _ => {return;},
+        };
+
+
+
+    }
 }
 
 impl FileFormat for GlbParser {
     fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError> {
         let (document, buffers, images) = GlbParser::parse_glb(reader)?;
+        
+        for mesh in document.meshes() {
+            for primitive in mesh.primitives() {
+                self.parse_mesh(primitive, &buffers, &images);
+            }
+        }
 
         todo!()
     }
