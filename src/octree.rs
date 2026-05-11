@@ -17,6 +17,148 @@ pub struct Chunk {
 }
 
 impl Chunk {
+    /// Recursively traverses and merges nodes. 
+    /// Appends new child blocks to `self.data` if node boundaries change.
+    fn merge_node_in_place(
+        &mut self,
+        self_val: u32,
+        self_is_leaf: bool,
+        other_data: &[u32],
+        other_val: u32,
+        other_is_leaf: bool
+    ) -> (bool, u32) {
+        // SVO Optimization: If 'other' is a solid leaf block, it completely overwrites 'self'
+        // without needing to traverse or allocate children further down.
+        if other_is_leaf {
+            return (true, other_val);
+        }
+
+        let mut s_val = self_val;
+        let mut s_is_leaf = self_is_leaf;
+
+        // If self is a solid leaf but 'other' specifies sub-details, we must subdivide self 
+        // into a parent with 8 leaf children so we can merge the partial 'other' data into it.
+        if s_is_leaf {
+            let new_pointer = self.data.len() as u32;
+            self.data.extend(std::iter::repeat(s_val).take(8));
+            s_val = (0xFF << 24) | (0xFF << 16) | new_pointer;
+            s_is_leaf = false;
+        }
+
+        let s_pointer = get_ending(s_val);
+        let o_pointer = get_ending(other_val);
+
+        let mut new_cc: u32 = 0;
+        let mut new_ll: u32 = 0;
+
+        let mut merged_children: [Option<(bool, u32)>; 8] = [None; 8];
+        let mut mask_changed = false;
+        let mut children_count = 0;
+
+        for i in 0..8 {
+            let s_has = has_child(s_val, i);
+            let o_has = has_child(other_val, i);
+
+            if !s_has && !o_has {
+                continue;
+            }
+
+            if !s_has && o_has {
+                // Self is empty here, but other has data. Deep copy other's subtree into self.
+                mask_changed = true;
+                let o_child_is_leaf = is_leaf(other_val, i);
+                let o_idx = o_pointer as usize + child_pop_count(other_val, i) as usize;
+                
+                let copied_child = self.copy_subtree_from_other(other_data, other_data[o_idx], o_child_is_leaf);
+                merged_children[i as usize] = Some(copied_child);
+                
+                new_cc |= 1 << i;
+                if copied_child.0 { new_ll |= 1 << i; }
+                children_count += 1;
+
+            } else if s_has && !o_has {
+                // SVO Optimization: Other is empty here. Keep self's un-mutated child.
+                let s_child_is_leaf = is_leaf(s_val, i);
+                let s_idx = s_pointer as usize + child_pop_count(s_val, i) as usize;
+                
+                merged_children[i as usize] = Some((s_child_is_leaf, self.data[s_idx]));
+                
+                new_cc |= 1 << i;
+                if s_child_is_leaf { new_ll |= 1 << i; }
+                children_count += 1;
+
+            } else {
+                // Both have data, we must recurse and merge them.
+                let s_child_is_leaf = is_leaf(s_val, i);
+                let s_idx = s_pointer as usize + child_pop_count(s_val, i) as usize;
+                let o_child_is_leaf = is_leaf(other_val, i);
+                let o_idx = o_pointer as usize + child_pop_count(other_val, i) as usize;
+
+                let s_child_val = self.data[s_idx];
+                let o_child_val = other_data[o_idx];
+
+                let merged_child = self.merge_node_in_place(
+                    s_child_val, s_child_is_leaf,
+                    other_data, o_child_val, o_child_is_leaf
+                );
+
+                if merged_child.0 != s_child_is_leaf || merged_child.1 != s_child_val {
+                    mask_changed = true;
+                }
+
+                merged_children[i as usize] = Some(merged_child);
+                new_cc |= 1 << i;
+                if merged_child.0 { new_ll |= 1 << i; }
+                children_count += 1;
+            }
+        }
+
+        // SVO Optimization: Try to collapse 8 identical solid leaf blocks back into a single leaf.
+        if children_count == 8 {
+            let mut all_same_leaf = true;
+            let mut first_payload = 0;
+            for i in 0..8 {
+                if let Some((true, p)) = merged_children[i] {
+                    if i == 0 { first_payload = p; }
+                    else if p != first_payload { all_same_leaf = false; break; }
+                } else {
+                    all_same_leaf = false;
+                    break;
+                }
+            }
+            if all_same_leaf {
+                return (true, first_payload);
+            }
+        }
+
+        let original_count = (s_val >> 24).count_ones();
+        if children_count != original_count {
+            mask_changed = true;
+        }
+
+        let mut final_pointer = s_pointer;
+
+        // If the size/structure changed, we allocate a new contiguous block for the children.
+        // If it didn't change, we modify the existing block directly in place to save memory.
+        if mask_changed {
+            final_pointer = self.data.len() as u32;
+            for _ in 0..children_count {
+                self.data.push(0);
+            }
+        }
+
+        let mut idx = 0;
+        for i in 0..8 {
+            if let Some((_, val)) = merged_children[i] {
+                self.data[final_pointer as usize + idx] = val;
+                idx += 1;
+            }
+        }
+
+        let new_node = (new_cc << 24) | (new_ll << 16) | final_pointer;
+        (false, new_node)
+    }
+
     /// Recursively flattens and copies a subtree from `other` into `self.data`.
     fn copy_subtree_from_other(&mut self, other_data: &[u32], val: u32, is_leaf: bool) -> (bool, u32) {
         if is_leaf {
