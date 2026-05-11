@@ -17,6 +17,36 @@ pub struct Chunk {
 }
 
 impl Chunk {
+    /// Merges another chunk into `self`. 
+    /// The `other` chunk has priority. If `other` is empty in a position, `self`'s original value remains.
+    pub fn add_chunk(&mut self, other: &Chunk) {
+        if other.data.is_empty() { return; }
+        if self.data.is_empty() {
+            self.data = other.data.clone();
+            return;
+        }
+
+        // We recursively merge starting from the root nodes (index 0).
+        // The root is always a parent node in this SVO implementation.
+        let (is_leaf, new_root) = self.merge_node_in_place(
+            self.data[0], false,
+            &other.data, other.data[0], false
+        );
+
+        if is_leaf {
+            // SVO Optimization: If the entire merged chunk collapses into a single solid leaf,
+            // we rebuild it as a root parent with 8 identical leaf children, because the 
+            // `find_intersection` logic expects `data[0]` to be a parent node with CC/LL masks.
+            self.data.clear();
+            self.data.push((0xFF << 24) | (0xFF << 16) | 1); // Root Parent
+            for _ in 0..8 {
+                self.data.push(new_root); // Fill 8 leaf payloads
+            }
+        } else {
+            self.data[0] = new_root;
+        }
+    }
+
     /// Recursively traverses and merges nodes. 
     /// Appends new child blocks to `self.data` if node boundaries change.
     fn merge_node_in_place(
