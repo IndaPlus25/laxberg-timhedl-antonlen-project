@@ -16,6 +16,39 @@ pub struct Chunk {
     pub max_pos: V3,
 }
 
+impl Chunk {
+    /// Recursively flattens and copies a subtree from `other` into `self.data`.
+    fn copy_subtree_from_other(&mut self, other_data: &[u32], val: u32, is_leaf: bool) -> (bool, u32) {
+        if is_leaf {
+            return (true, val);
+        }
+
+        let pointer = get_ending(val);
+        let cc = val >> 24;
+        let ll = (val >> 16) & 0xFF;
+        
+        let pop_count = cc.count_ones() as usize;
+        let new_pointer = self.data.len() as u32;
+        
+        // Reserve space for children
+        for _ in 0..pop_count {
+            self.data.push(0); 
+        }
+
+        let mut idx = 0;
+        for i in 0..8 {
+            if (cc & (1 << i)) != 0 {
+                let child_is_leaf = (ll & (1 << i)) != 0;
+                let child_val = other_data[pointer as usize + idx];
+                let copied = self.copy_subtree_from_other(other_data, child_val, child_is_leaf);
+                self.data[new_pointer as usize + idx] = copied.1;
+                idx += 1;
+            }
+        }
+
+        (false, (cc << 24) | (ll << 16) | new_pointer)
+    }
+}
 //32x32x32 non-octree optimized chunk, raw data
 pub struct FlatChunk {
 
