@@ -200,6 +200,9 @@ Available Commands:
       Sets the time of day and the speed of the day/night cycle.
       Example: time 0.5 0.1
 
+  clear
+      Removes all loaded objects by clearing the chunks
+
   help
       Displays this menu.
 ============================================================
