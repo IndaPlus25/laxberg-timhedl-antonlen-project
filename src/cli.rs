@@ -72,7 +72,15 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
             let chunks = to_chunks(&world_data);
 
             println!("Successfully built {} chunks!", chunks.len());
-            app.chunks = chunks;
+
+            // Add to existing chunk or insert new if no chunk exists
+            for (key, value) in chunks {
+                if let Some(chunk) = app.chunks.get_mut(&key) {
+                    chunk.add_chunk(&value);
+                } else {
+                    app.chunks.insert(key, value);
+                }
+            }
             reset_and_upload_world(app);
         }
         CliCommand::Save(path) => {
@@ -87,7 +95,15 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
             match load_file_interface(&path) {
                 Ok((data, colors)) => {
                     println!("Successfully loaded data");
-                    app.chunks = data;
+
+                    // Add to existing chunk or insert new if no chunk exists
+                    for (key, value) in data {
+                        if let Some(chunk) = app.chunks.get_mut(&key) {
+                            chunk.add_chunk(&value);
+                        } else {
+                            app.chunks.insert(key, value);
+                        }
+                    }
                   
                     //viktigt med färger, Alpha = reflectivity
                     app.colours = colors;
