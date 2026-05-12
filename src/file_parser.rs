@@ -26,17 +26,6 @@ impl Vertex {
         [self.x.to_bits(), self.y.to_bits(), self.z.to_bits()]
     }
 
-    fn convert_to_real_color(&mut self) {
-        let gamma: f32 = 2.2;
-        let inverse_gamma = 1.0 / gamma;
-
-        self.x = self.x.powf(inverse_gamma);
-        self.y = self.y.powf(inverse_gamma);
-        self.z = self.z.powf(inverse_gamma);
-        self.u = self.u;
-        self.v = self.v;
-    }
-
     fn apply_transform(&mut self, transform: [[f32; 4]; 4]){
         let x = self.x;
         let y = self.y;
@@ -164,11 +153,14 @@ impl PaletteManager {
         }
     }
 
-    fn get_color_from_position(img: &RgbaImage, position: (f32, f32)) -> Vertex {
+    fn get_color_from_position(img: &RgbaImage, position: (f32, f32), flip_y: bool) -> Vertex {
         let (width, height) = img.dimensions();
 
         let pixel_x = (position.0 * width as f32).floor() as u32;
-        let pixel_y = ((1.0 - position.1) * height as f32).floor() as u32;
+        let pixel_y = match flip_y{
+            true => ((1.0 - position.1) * height as f32).floor() as u32,
+            false => (position.1 * height as f32).floor() as u32,
+        };
 
         let safe_x = pixel_x.clamp(0, width - 1);
         let safe_y = pixel_y.clamp(0, height - 1);
@@ -176,9 +168,9 @@ impl PaletteManager {
         let pixel = img.get_pixel(safe_x, safe_y);
 
         Vertex {
-            x: pixel[0] as f32 / 255.0,
-            y: pixel[1] as f32 / 255.0,
-            z: pixel[2] as f32 / 255.0,
+            x: (pixel[0] as f32 / 255.0).powf(2.2),
+            y: (pixel[1] as f32 / 255.0).powf(2.2),
+            z: (pixel[2] as f32 / 255.0).powf(2.2),
             u: 0.0,
             v: 0.0,
         }
@@ -285,7 +277,7 @@ impl ObjParser {
         if let (Some(point), Some(palette_image)) = (first_some, self.palette_manager.get_current_palette()){
             let position = self.palette_manager.v_textures[point];
 
-            let color = PaletteManager::get_color_from_position(&palette_image, position);
+            let color = PaletteManager::get_color_from_position(&palette_image, position, true);
             self.palette_manager.add_color(color.clone());
 
             color_id = self.palette_manager.get_index_from_color(color).unwrap_or(&1).to_owned();
@@ -344,9 +336,6 @@ impl ObjParser {
 
         let mut current_material = String::new();
 
-        let gamma: f32 = 2.2;
-        let inverse_gamma = 1.0 / gamma;
-
         for line_result in reader.lines() {
             let line = line_result?;
             
@@ -357,9 +346,9 @@ impl ObjParser {
 
                     let vertex = self.parse_vertices(color)?;
                     let parsed_color = Vertex {
-                        x: vertex.x.powf(inverse_gamma),
-                        y: vertex.y.powf(inverse_gamma),
-                        z: vertex.z.powf(inverse_gamma),
+                        x: vertex.x.powf(2.2),
+                        y: vertex.y.powf(2.2),
+                        z: vertex.z.powf(2.2),
                         u: 0.0,
                         v: 0.0,
                     };
@@ -432,7 +421,7 @@ impl GlbParser {
         Ok(gltf::import_slice(&file_bytes)?)
     } 
 
-    fn parse_mesh(&mut self, primitive: Primitive<'_>, buffers: &Vec<Data>, images: &Vec<gltf::image::Data>) {
+    fn parse_mesh(&mut self, primitive: Primitive<'_>, buffers: &Vec<Data>, images: &Vec<RgbaImage>, transform: Mat4) {
         let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));        
     
         let vertex_positions_op = reader.read_positions();
@@ -466,13 +455,15 @@ impl GlbParser {
         };
 
         for (vertex_value, uv_value) in vertex_positions.iter().zip(uv_values.iter()){
-            let vertex = Vertex { 
+            let mut vertex = Vertex { 
                 x: vertex_value[0], 
                 y: vertex_value[1], 
                 z: vertex_value[2], 
                 u: uv_value[0], 
                 v: uv_value[1], 
             };
+
+            vertex.apply_transform(transform.to_cols_array_2d());
 
             self.vertices.push(vertex);
         }
@@ -494,14 +485,9 @@ impl GlbParser {
 
     }
 
-    fn find_color(&mut self, vertecies: (usize, usize, usize), image_index: Option<usize>, images: &Vec<gltf::image::Data>) -> usize{
-        let image_data = match image_index{
+    fn find_color(&mut self, vertecies: (usize, usize, usize), image_index: Option<usize>, images: &Vec<RgbaImage>) -> usize{
+        let rgba_image = match image_index{
             Some(index) => &images[index],
-            None => return 1,
-        };
-
-        let rgba_image = match GlbParser::convert_gltf_to_rgba(image_data){
-            Some(image) => image,
             None => return 1,
         };
 
@@ -516,8 +502,7 @@ impl GlbParser {
             let u_wrapped = vertex.u.rem_euclid(1.0);
             let v_wrapped = vertex.v.rem_euclid(1.0);   
 
-            let mut color = PaletteManager::get_color_from_position(&rgba_image, (u_wrapped, v_wrapped));
-            color.convert_to_real_color();
+            let color = PaletteManager::get_color_from_position(&rgba_image, (u_wrapped, v_wrapped), false);
 
             self.palette_manager.add_color(color.clone());
             color_id = self.palette_manager.get_index_from_color(color).copied();
@@ -557,7 +542,7 @@ impl GlbParser {
 
         if let Some(mesh) = node.mesh() {
             for primitive in mesh.primitives() {
-                self.parse_mesh(primitive, buffers, &vec![]);
+                self.parse_mesh(primitive, buffers, images, global_transform);
             }
         }
 
