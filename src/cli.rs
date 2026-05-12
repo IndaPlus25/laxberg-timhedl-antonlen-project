@@ -12,6 +12,8 @@ pub enum CliCommand {
     Load(String),
     PrintColors,
     ChangeColor{i: String, r: f32, g: f32, b: f32, a: f32}, 
+    Time{time: f32, speed: f32},
+    Help,
 }
 
 pub fn parse_command(input: &str) -> Option<CliCommand> {
@@ -33,6 +35,11 @@ pub fn parse_command(input: &str) -> Option<CliCommand> {
             b: b.parse().ok()?,
             a: a.parse().ok()?,
         }),
+        ["time", time, speed] => Some(CliCommand::Time {
+            time: time.parse().ok()?,
+            speed: speed.parse().ok()?,
+        }),
+        ["help"] => Some(CliCommand::Help),
         _ => None,
     }
 }
@@ -141,8 +148,56 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
             } else {
                 println!("Error: All color values (r, g, b, a) must be between 0.0 and 1.0.");
             }
+        },
+        CliCommand::Time { time, speed} => {
+            app.lighting.time = time;
+            app.lighting.time_scale = speed;
+        },
+        CliCommand::Help => {
+            print_help();
+
         }
     }
+}
+
+fn print_help() {
+    println!(r#"
+============================================================
+                      RAYCASTER HELP
+============================================================
+Available Commands:
+
+  quit, exit
+      Exits the application.
+
+  parse <path> <min_width>
+      Parses a 3D model file into the voxel grid.
+      Example: parse models/house.obj 32
+
+  save <path>
+      Saves the current voxel world to a file.
+      Example: save saves/world1.dat
+
+  load <path>
+      Loads a voxel world from a file.
+      Example: load saves/world1.dat
+
+  colors
+      Prints the current color palette and their reflectivity.
+
+  change_color <i> <r> <g> <b> <a>
+      Changes a color. 'i' is the index (or 'a' for all, 'b' for all alpha/reflectivity).
+      RGBA values must be between 0.0 and 1.0.
+      Example: change_color 1 1.0 0.0 0.0 1.0
+
+  time <time> <speed>
+      Sets the time of day and the speed of the day/night cycle.
+      Example: time 0.5 0.1
+
+  help
+      Displays this menu.
+============================================================
+"#);
 }
 
 fn reset_and_upload_world(app: &mut App) {
