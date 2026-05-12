@@ -481,6 +481,21 @@ impl GlbParser {
 
                 self.faces.push(triangle);
             }
+        } else {
+            let primitive_vertex_count = self.vertices.len() - vertex_offset;
+
+            for i in (0..primitive_vertex_count).step_by(3) {
+                if i + 2 >= primitive_vertex_count { 
+                    break; 
+                } 
+
+                let v1 = i + vertex_offset;
+                let v2 = i + 1 + vertex_offset;
+                let v3 = i + 2 + vertex_offset;
+
+                let color_id = self.find_color((v1, v2, v3), current_image_index, images);
+                self.faces.push(Face {v1, v2, v3, color_id});
+            }
         }
 
     }
