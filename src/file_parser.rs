@@ -6,6 +6,7 @@ use gltf::buffer::Data;
 use gltf::image::Format;
 use image::{DynamicImage, RgbImage, RgbaImage};
 use gltf::{Gltf, Primitive};
+use glam::{Mat4, Vec3};
 
 const DEFAULT_COLOR: Vertex = Vertex {x: 1.0, y: 1.0, z: 1.0, u: 0.0, v: 0.0};
 
@@ -548,8 +549,21 @@ impl GlbParser {
         }
     }
 
-    fn parse_node(&mut self, node: gltf::Node, buffers: &Vec<Data>, images: &Vec<RgbaImage>) {
-        todo!()
+    fn parse_node(&mut self, node: &gltf::Node, buffers: &Vec<Data>, images: &Vec<RgbaImage>, parent_transform: Mat4) {
+        let local_transform = node.transform().matrix();
+        let usable_local_transform = Mat4::from_cols_array_2d(&local_transform);
+
+        let global_transform = parent_transform * usable_local_transform;
+
+        if let Some(mesh) = node.mesh() {
+            for primitive in mesh.primitives() {
+                self.parse_mesh(primitive, buffers, &vec![]);
+            }
+        }
+
+        for child in node.children() {
+            self.parse_node(&child, buffers, images, global_transform);
+        }
     }
 }
 
@@ -570,7 +584,15 @@ impl FileFormat for GlbParser {
 
         if let Some(scene) = document.default_scene(){
             for node in scene.nodes(){
-                self.parse_node(node, &buffers, &rgb_images);
+                let identity = [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ];
+                let usable_identity = Mat4::from_cols_array_2d(&identity);
+
+                self.parse_node(&node, &buffers, &rgb_images, usable_identity);
             }
         }
 
