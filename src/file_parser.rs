@@ -35,6 +35,16 @@ impl Vertex {
         self.u = self.u;
         self.v = self.v;
     }
+
+    fn apply_transform(&mut self, transform: [[f32; 4]; 4]){
+        let x = self.x;
+        let y = self.y;
+        let z = self.z;
+
+        self.x = transform[0][0] * x + transform[1][0] * y + transform[2][0] * z + transform[3][0];
+        self.y = transform[0][1] * x + transform[1][1] * y + transform[2][1] * z + transform[3][1];
+        self.z = transform[0][2] * x + transform[1][2] * y + transform[2][2] * z + transform[3][2];
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
