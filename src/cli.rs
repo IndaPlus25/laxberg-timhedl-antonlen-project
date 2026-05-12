@@ -14,6 +14,7 @@ pub enum CliCommand {
     ChangeColor{i: String, r: f32, g: f32, b: f32, a: f32}, 
     Time{time: f32, speed: f32},
     Help,
+    Clear,
 }
 
 pub fn parse_command(input: &str) -> Option<CliCommand> {
@@ -40,6 +41,7 @@ pub fn parse_command(input: &str) -> Option<CliCommand> {
             speed: speed.parse().ok()?,
         }),
         ["help"] => Some(CliCommand::Help),
+        ["clear"] => Some(CliCommand::Clear),
         _ => None,
     }
 }
@@ -156,6 +158,10 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
         CliCommand::Help => {
             print_help();
 
+        },
+        CliCommand::Clear => {
+            app.chunks.clear();
+            reset_and_upload_world(app);            
         }
     }
 }
