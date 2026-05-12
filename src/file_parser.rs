@@ -537,14 +537,24 @@ impl GlbParser {
             _ => None
         }
     }
+
+    fn parse_node(&mut self, node: gltf::Node, buffers: &Vec<Data>, images: Vec<RgbaImage>) {
+        todo!()
+    }
 }
 
 impl FileFormat for GlbParser {
     fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError> {
         let (document, buffers, images) = GlbParser::parse_glb(reader)?;
         
+        if let Some(scene) = document.default_scene(){
+            for node in scene.nodes(){
+                self.parse_node(node, &buffers, vec![]);
+            }
+        }
         for mesh in document.meshes() {
             for primitive in mesh.primitives() {
+                println!("Doing primative");
                 self.parse_mesh(primitive, &buffers, &images);
             }
         }
