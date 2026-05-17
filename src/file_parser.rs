@@ -1,10 +1,14 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Error, ErrorKind};
+use std::io::{BufRead, BufReader, Error, ErrorKind, Read};
 use std::path::{Path, PathBuf};
-use image::RgbaImage;
+use gltf::buffer::Data;
+use gltf::image::Format;
+use image::{DynamicImage, RgbImage, RgbaImage};
+use gltf::{Gltf, Primitive};
+use glam::{Mat4, Vec3};
 
-const DEFAULT_COLOR: Vertex = Vertex {x: 1.0, y: 1.0, z: 1.0};
+const DEFAULT_COLOR: Vertex = Vertex {x: 1.0, y: 1.0, z: 1.0, u: 0.0, v: 0.0};
 
 use crate::error::{FileParseError};
 
@@ -13,11 +17,23 @@ pub struct Vertex{
     pub x: f32,
     pub y: f32,
     pub z: f32,
+    pub u: f32,
+    pub v: f32,
 }
 
 impl Vertex {
     fn to_bits(self) -> [u32; 3]{
         [self.x.to_bits(), self.y.to_bits(), self.z.to_bits()]
+    }
+
+    fn apply_transform(&mut self, transform: [[f32; 4]; 4]){
+        let x = self.x;
+        let y = self.y;
+        let z = self.z;
+
+        self.x = transform[0][0] * x + transform[1][0] * y + transform[2][0] * z + transform[3][0];
+        self.y = transform[0][1] * x + transform[1][1] * y + transform[2][1] * z + transform[3][1];
+        self.z = transform[0][2] * x + transform[1][2] * y + transform[2][2] * z + transform[3][2];
     }
 }
 
@@ -137,11 +153,14 @@ impl PaletteManager {
         }
     }
 
-    fn get_color_from_position(img: &RgbaImage, position: (f32, f32)) -> Vertex {
+    fn get_color_from_position(img: &RgbaImage, position: (f32, f32), flip_y: bool) -> Vertex {
         let (width, height) = img.dimensions();
 
         let pixel_x = (position.0 * width as f32).floor() as u32;
-        let pixel_y = ((1.0 - position.1) * height as f32).floor() as u32;
+        let pixel_y = match flip_y{
+            true => ((1.0 - position.1) * height as f32).floor() as u32,
+            false => (position.1 * height as f32).floor() as u32,
+        };
 
         let safe_x = pixel_x.clamp(0, width - 1);
         let safe_y = pixel_y.clamp(0, height - 1);
@@ -149,21 +168,17 @@ impl PaletteManager {
         let pixel = img.get_pixel(safe_x, safe_y);
 
         Vertex {
-            x: pixel[0] as f32 / 255.0,
-            y: pixel[1] as f32 / 255.0,
-            z: pixel[2] as f32 / 255.0,
+            x: (pixel[0] as f32 / 255.0).powf(2.2),
+            y: (pixel[1] as f32 / 255.0).powf(2.2),
+            z: (pixel[2] as f32 / 255.0).powf(2.2),
+            u: 0.0,
+            v: 0.0,
         }
     }
 }
 
 trait FileFormat{
     fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError>;
-
-    fn parse_line(&mut self, line_result: Result<String, Error>, folder: Option<&Path>) -> Result<(), FileParseError>; 
-
-    fn parse_vertices(&self, coordinates: &str) -> Result<Vertex, FileParseError>;
-
-    fn parse_faces(&mut self, vertices: &str)  -> Result<Vec<Face>, FileParseError> ;
 } 
 
 struct ObjParser{
@@ -179,110 +194,6 @@ impl ObjParser {
             faces: vec![],
             palette_manager: PaletteManager::new(),
         }
-    }
-
-    fn parse_face_obj_format(part: Option<&str>) -> Result<(usize, Option<usize>), FileParseError> {
-        let Some(point_data) = part else {
-            return Err(FileParseError::MissingData);
-        };
-
-        let mut parts = point_data.split('/');
-
-        let Some(point_str) = parts.next() else {
-            return Err(FileParseError::MissingPoint);
-        };
-
-        let texture = parts.next().and_then(|s| s.parse::<usize>().ok());
-
-        let Ok(parsed_point) = point_str.parse::<usize>() else {
-            return Err(FileParseError::InvalidDataType(point_str.to_string()));
-        };
-
-        let Some(point) = parsed_point.checked_sub(1) else {
-            return Err(FileParseError::DataOutOfBounds(parsed_point));
-        };
-
-        Ok((point, texture))
-    }
-
-    fn parse_vertex_obj_format(part: Option<&str>) -> Result<f32, FileParseError> { 
-        let Some(coordinate_str) = part else {
-            return Err(FileParseError::MissingCoordinate);
-        };
-
-        let Ok(coordinate) = coordinate_str.parse::<f32>() else {
-            return Err(FileParseError::InvalidDataType(coordinate_str.to_string()));
-        };
-
-        Ok(coordinate)
-    }
-
-    fn parse_color_file(&mut self, file: &File) -> Result<(), FileParseError>{
-        let reader = BufReader::new(file);
-
-        let mut current_material = String::new();
-
-        let gamma: f32 = 2.2;
-        let inverse_gamma = 1.0 / gamma;
-
-        for line_result in reader.lines() {
-            let line = line_result?;
-            
-            match line.to_lowercase() {
-                x if x.starts_with("newmtl ") => current_material = x[7..].trim().to_owned(),
-                x if x.starts_with("kd ") => {
-                    let color = x[3..].trim();
-
-                    let vertex = self.parse_vertices(color)?;
-                    let parsed_color = Vertex {
-                        x: vertex.x.powf(inverse_gamma),
-                        y: vertex.y.powf(inverse_gamma),
-                        z: vertex.z.powf(inverse_gamma),
-                    };
-
-                    self.palette_manager.add_material(current_material.clone(), parsed_color);
-                },
-                x if x.starts_with("map_kd ") => {
-                    let palette = line[7..].trim();
-
-                    self.palette_manager.add_palette(current_material.clone(), palette.to_string());
-                }
-                _ => {}
-            }
-        }
-
-        Ok(())
-    }
-
-    fn parse_v_texture(coordinates: &str) -> Result<(f32, f32), FileParseError> {
-        let mut parts = coordinates.split_whitespace();
-
-        let x =  ObjParser::parse_vertex_obj_format(parts.next())?;
-        let y = ObjParser::parse_vertex_obj_format(parts.next())?;
-
-        Ok((x, y))
-    }
-}
-
-impl FileFormat for ObjParser { 
-    fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError> {
-        if let Some(folder) = folder {
-            self.palette_manager.folder = folder.to_path_buf()
-        }        
-        
-        for (i, line_result) in reader.lines().enumerate(){
-            match self.parse_line(line_result, folder) {
-                Ok(_) => {},
-                Err(error) => {return Err(FileParseError::FailedLineParse(i, Box::new(error)));}
-            }
-        }  
-        let mesh = Mesh {
-            vertices: std::mem::take(&mut self.vertices),
-            faces: std::mem::take(&mut self.faces),
-            colors: std::mem::take(&mut self.palette_manager.colors),
-        };
-
-        Ok(mesh)
     }
 
     fn parse_line(&mut self, line_result: Result<String, Error>, folder: Option<&Path>) -> Result<(), FileParseError> {
@@ -345,7 +256,7 @@ impl FileFormat for ObjParser {
         let y = ObjParser::parse_vertex_obj_format(parts.next())?;
         let z = ObjParser::parse_vertex_obj_format(parts.next())?;
 
-        Ok(Vertex { x, y, z })
+        Ok(Vertex { x, y, z, u: 0.0, v: 0.0 })
     }
 
     fn parse_faces(&mut self, vertices: &str)  -> Result<Vec<Face>, FileParseError> {
@@ -366,7 +277,7 @@ impl FileFormat for ObjParser {
         if let (Some(point), Some(palette_image)) = (first_some, self.palette_manager.get_current_palette()){
             let position = self.palette_manager.v_textures[point];
 
-            let color = PaletteManager::get_color_from_position(&palette_image, position);
+            let color = PaletteManager::get_color_from_position(&palette_image, position, true);
             self.palette_manager.add_color(color.clone());
 
             color_id = self.palette_manager.get_index_from_color(color).unwrap_or(&1).to_owned();
@@ -384,6 +295,330 @@ impl FileFormat for ObjParser {
         }
     }
 
+    fn parse_face_obj_format(part: Option<&str>) -> Result<(usize, Option<usize>), FileParseError> {
+        let Some(point_data) = part else {
+            return Err(FileParseError::MissingData);
+        };
+
+        let mut parts = point_data.split('/');
+
+        let Some(point_str) = parts.next() else {
+            return Err(FileParseError::MissingPoint);
+        };
+
+        let texture = parts.next().and_then(|s| s.parse::<usize>().ok());
+
+        let Ok(parsed_point) = point_str.parse::<usize>() else {
+            return Err(FileParseError::InvalidDataType(point_str.to_string()));
+        };
+
+        let Some(point) = parsed_point.checked_sub(1) else {
+            return Err(FileParseError::DataOutOfBounds(parsed_point));
+        };
+
+        Ok((point, texture))
+    }
+
+    fn parse_vertex_obj_format(part: Option<&str>) -> Result<f32, FileParseError> { 
+        let Some(coordinate_str) = part else {
+            return Err(FileParseError::MissingCoordinate);
+        };
+
+        let Ok(coordinate) = coordinate_str.parse::<f32>() else {
+            return Err(FileParseError::InvalidDataType(coordinate_str.to_string()));
+        };
+
+        Ok(coordinate)
+    }
+
+    fn parse_color_file(&mut self, file: &File) -> Result<(), FileParseError>{
+        let reader = BufReader::new(file);
+
+        let mut current_material = String::new();
+
+        for line_result in reader.lines() {
+            let line = line_result?;
+            
+            match line.to_lowercase() {
+                x if x.starts_with("newmtl ") => current_material = x[7..].trim().to_owned(),
+                x if x.starts_with("kd ") => {
+                    let color = x[3..].trim();
+
+                    let vertex = self.parse_vertices(color)?;
+                    let parsed_color = Vertex {
+                        x: vertex.x.powf(2.2),
+                        y: vertex.y.powf(2.2),
+                        z: vertex.z.powf(2.2),
+                        u: 0.0,
+                        v: 0.0,
+                    };
+
+                    self.palette_manager.add_material(current_material.clone(), parsed_color);
+                },
+                x if x.starts_with("map_kd ") => {
+                    let palette = line[7..].trim();
+
+                    self.palette_manager.add_palette(current_material.clone(), palette.to_string());
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    fn parse_v_texture(coordinates: &str) -> Result<(f32, f32), FileParseError> {
+        let mut parts = coordinates.split_whitespace();
+
+        let x =  ObjParser::parse_vertex_obj_format(parts.next())?;
+        let y = ObjParser::parse_vertex_obj_format(parts.next())?;
+
+        Ok((x, y))
+    }
+}
+
+impl FileFormat for ObjParser { 
+    fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError> {
+        if let Some(folder) = folder {
+            self.palette_manager.folder = folder.to_path_buf()
+        }        
+        
+        for (i, line_result) in reader.lines().enumerate(){
+            match self.parse_line(line_result, folder) {
+                Ok(_) => {},
+                Err(error) => {return Err(FileParseError::FailedLineParse(i, Box::new(error)));}
+            }
+        }  
+        let mesh = Mesh {
+            vertices: std::mem::take(&mut self.vertices),
+            faces: std::mem::take(&mut self.faces),
+            colors: std::mem::take(&mut self.palette_manager.colors),
+        };
+
+        Ok(mesh)
+    }
+}
+
+struct GlbParser{
+    vertices: Vec<Vertex>,
+    faces: Vec<Face>,
+    palette_manager: PaletteManager    
+}
+
+impl GlbParser {
+    fn new() -> Self {
+        Self {
+            vertices: vec![],
+            faces: vec![],
+            palette_manager: PaletteManager::new(),
+        }
+    }   
+
+    fn parse_glb(reader: &mut BufReader<File>) -> Result<(gltf::Document, Vec<gltf::buffer::Data>, Vec<gltf::image::Data>), FileParseError> {
+        let mut file_bytes = Vec::new();  
+        reader.read_to_end(&mut file_bytes)?;  
+
+        Ok(gltf::import_slice(&file_bytes)?)
+    } 
+
+    fn parse_mesh(&mut self, primitive: Primitive<'_>, buffers: &Vec<Data>, images: &Vec<RgbaImage>, transform: Mat4) {
+        let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));        
+    
+        let vertex_positions_op = reader.read_positions();
+        let uv_values_op = reader.read_tex_coords(0).map(|v| v.into_f32());
+
+        let mut current_image_index = None;
+
+        let pbr = primitive.material().pbr_metallic_roughness();        
+        if let Some(texture_info) = pbr.base_color_texture() {
+            current_image_index = Some(texture_info.texture().source().index());
+        }
+
+        let base_color = pbr.base_color_factor();
+
+        let vertex_offset = self.vertices.len();
+
+        let (vertex_positions, uv_values): (Vec<[f32; 3]>, Vec<[f32; 2]>) = match (vertex_positions_op, uv_values_op) {
+            (Some(vertecies), None) => {
+                let vertices_vec: Vec<[f32; 3]> = vertecies.collect();
+                let target_len = vertices_vec.len();
+
+                (vertices_vec, vec![[0.0, 0.0]; target_len])
+            },
+            (Some(vertecies), Some(uvs)) => {
+                let vertices_vec: Vec<[f32; 3]> = vertecies.collect();
+                let mut uvs_vec: Vec<[f32; 2]> = uvs.collect();
+
+                uvs_vec.resize(vertices_vec.len(), [-1.0, -1.0]);
+
+                (vertices_vec, uvs_vec)
+            },
+            _ => {return;},
+        };
+
+        for (vertex_value, uv_value) in vertex_positions.iter().zip(uv_values.iter()){
+            let mut vertex = Vertex { 
+                x: vertex_value[0], 
+                y: vertex_value[1], 
+                z: vertex_value[2], 
+                u: uv_value[0], 
+                v: uv_value[1], 
+            };
+
+            vertex.apply_transform(transform.to_cols_array_2d());
+
+            self.vertices.push(vertex);
+        }
+
+        if let Some(index_iter) = reader.read_indices() {
+            let indices: Vec<u32> = index_iter.into_u32().collect();
+
+            for chunk in indices.chunks_exact(3) {
+                let v1 = chunk[0] as usize + vertex_offset;
+                let v2 = chunk[1] as usize + vertex_offset;
+                let v3 = chunk[2] as usize + vertex_offset;
+
+                let color_id = self.find_color((v1, v2, v3), current_image_index, images, base_color);
+                let triangle = Face {v1, v2, v3, color_id};
+
+                self.faces.push(triangle);
+            }
+        } else {
+            let primitive_vertex_count = self.vertices.len() - vertex_offset;
+
+            for i in (0..primitive_vertex_count).step_by(3) {
+                if i + 2 >= primitive_vertex_count { 
+                    break; 
+                } 
+
+                let v1 = i + vertex_offset;
+                let v2 = i + 1 + vertex_offset;
+                let v3 = i + 2 + vertex_offset;
+
+                let color_id = self.find_color((v1, v2, v3), current_image_index, images, base_color);
+                self.faces.push(Face {v1, v2, v3, color_id});
+            }
+        }
+
+    }
+
+    fn find_color(&mut self, vertecies: (usize, usize, usize), image_index: Option<usize>, images: &Vec<RgbaImage>, base_color: [f32; 4]) -> usize{
+        let rgba_image = match image_index{
+            Some(index) => &images[index],
+            None => {
+                let color = Vertex {
+                    x: base_color[0],
+                    y: base_color[1],
+                    z: base_color[2],
+                    u: 0.0,
+                    v: 0.0,
+                };
+
+                self.palette_manager.add_color(color.clone());
+                let color_id = self.palette_manager.get_index_from_color(color).copied();
+
+                return color_id.unwrap_or(1)
+            },
+        };
+
+        let parsed_vertecies = [self.vertices[vertecies.0].clone(), self.vertices[vertecies.1].clone(), self.vertices[vertecies.2].clone()];
+        let mut color_id: Option<usize> = None;
+
+        for vertex in parsed_vertecies{
+            let u_wrapped = vertex.u.rem_euclid(1.0);
+            let v_wrapped = vertex.v.rem_euclid(1.0);   
+
+            let color = PaletteManager::get_color_from_position(&rgba_image, (u_wrapped, v_wrapped), false);
+
+            println!("{:?}", color);
+
+            self.palette_manager.add_color(color.clone());
+            color_id = self.palette_manager.get_index_from_color(color).copied();
+
+            if color_id.is_some() {
+                break;
+            }
+        }
+
+        println!("{:?}", color_id);
+
+        color_id.unwrap_or(1)
+    }
+
+    fn convert_gltf_to_rgba(data: &gltf::image::Data) -> Option<RgbaImage> {
+        let width = data.width;
+        let height = data.height;
+        
+        let pixels = data.pixels.clone(); 
+
+        match data.format {
+            Format::R8G8B8A8 => {
+                RgbaImage::from_raw(width, height, pixels)
+            }
+            Format::R8G8B8 => {
+                let rgb_img = RgbImage::from_raw(width, height, pixels)?;
+                
+                Some(DynamicImage::ImageRgb8(rgb_img).into_rgba8())
+            }
+            _ => None
+        }
+    }
+
+    fn parse_node(&mut self, node: &gltf::Node, buffers: &Vec<Data>, images: &Vec<RgbaImage>, parent_transform: Mat4) {
+        let local_transform = node.transform().matrix();
+        let usable_local_transform = Mat4::from_cols_array_2d(&local_transform);
+
+        let global_transform = parent_transform * usable_local_transform;
+
+        if let Some(mesh) = node.mesh() {
+            for primitive in mesh.primitives() {
+                self.parse_mesh(primitive, buffers, images, global_transform);
+            }
+        }
+
+        for child in node.children() {
+            self.parse_node(&child, buffers, images, global_transform);
+        }
+    }
+}
+
+impl FileFormat for GlbParser {
+    fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError> {
+        let (document, buffers, images) = GlbParser::parse_glb(reader)?;
+        
+        let mut rgb_images: Vec<RgbaImage> = Vec::new(); 
+
+        for image in images{
+            let rgb_image = match GlbParser::convert_gltf_to_rgba(&image) {
+                Some(image) => image,
+                None => RgbaImage::new(4, 4),
+            };
+
+            rgb_images.push(rgb_image);
+        }
+
+        if let Some(scene) = document.default_scene(){
+            for node in scene.nodes(){
+                let identity = [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ];
+                let usable_identity = Mat4::from_cols_array_2d(&identity);
+
+                self.parse_node(&node, &buffers, &rgb_images, usable_identity);
+            }
+        }
+
+        let mesh = Mesh {
+            vertices: std::mem::take(&mut self.vertices),
+            faces: std::mem::take(&mut self.faces),
+            colors: std::mem::take(&mut self.palette_manager.colors),
+        };
+
+        Ok(mesh)
+    }
 }
 
 fn get_file_format(path: &Path) -> Result<Box<dyn FileFormat>, FileParseError>{
@@ -394,6 +629,9 @@ fn get_file_format(path: &Path) -> Result<Box<dyn FileFormat>, FileParseError>{
     match extension.as_deref() {
         Some("obj") => {
             Ok(Box::new(ObjParser::new()))
+        },
+        Some("glb") => {
+            Ok(Box::new(GlbParser::new()))
         },
         _ => {Err(FileParseError::NotSupportedFileFormat(extension))},
     }
@@ -440,52 +678,52 @@ mod tests {
 
         let vertices = vec![
             // o alights.014_Plane.051
-            Vertex { x: -6.070838, y: 1.759535, z: -26.802847 },
-            Vertex { x: -5.678808, y: 5.600095, z: -26.429026 },
-            Vertex { x: 3.241621, y: 0.874194, z: -27.473124 },
-            Vertex { x: 3.633651, y: 4.714754, z: -27.099302 },
+            Vertex { x: -6.070838, y: 1.759535, z: -26.802847, u: 0.0, v: 0.0},
+            Vertex { x: -5.678808, y: 5.600095, z: -26.429026, u: 0.0, v: 0.0},
+            Vertex { x: 3.241621, y: 0.874194, z: -27.473124, u: 0.0, v: 0.0 },
+            Vertex { x: 3.633651, y: 4.714754, z: -27.099302, u: 0.0, v: 0.0 },
             
             // o alights.000_Plane.049
-            Vertex { x: -18.872726, y: 1.170217, z: -5.146016 },
-            Vertex { x: -18.331558, y: 5.010777, z: -5.169862 },
-            Vertex { x: -12.906070, y: 0.284877, z: -12.327253 },
-            Vertex { x: -12.364902, y: 4.125437, z: -12.351101 },
+            Vertex { x: -18.872726, y: 1.170217, z: -5.146016, u: 0.0, v: 0.0 },
+            Vertex { x: -18.331558, y: 5.010777, z: -5.169862, u: 0.0, v: 0.0 },
+            Vertex { x: -12.906070, y: 0.284877, z: -12.327253, u: 0.0, v: 0.0 },
+            Vertex { x: -12.364902, y: 4.125437, z: -12.351101, u: 0.0, v: 0.0 },
             
             // o alights.015_Plane.050
-            Vertex { x: 18.468174, y: 7.681436, z: 20.833883 },
-            Vertex { x: 19.072819, y: 11.192630, z: 19.663589 },
-            Vertex { x: 19.423908, y: 7.429442, z: 20.571625 },
-            Vertex { x: 20.028553, y: 10.940637, z: 19.401331 },
-            Vertex { x: 15.553186, y: 8.450017, z: 21.633774 },
-            Vertex { x: 16.157831, y: 11.961211, z: 20.463480 },
-            Vertex { x: 16.508921, y: 8.198023, z: 21.371515 },
-            Vertex { x: 17.113564, y: 11.709217, z: 20.201221 },
-            Vertex { x: 12.638199, y: 9.218597, z: 22.433664 },
-            Vertex { x: 13.242843, y: 12.729792, z: 21.263371 },
-            Vertex { x: 13.593933, y: 8.966604, z: 22.171406 },
-            Vertex { x: 14.198576, y: 12.477798, z: 21.001112 },
-            Vertex { x: 9.723210, y: 9.987179, z: 23.233555 },
-            Vertex { x: 10.327855, y: 13.498373, z: 22.063261 },
-            Vertex { x: 10.678944, y: 9.735185, z: 22.971296 },
-            Vertex { x: 11.283588, y: 13.246380, z: 21.801003 },
-            Vertex { x: 6.808223, y: 10.755759, z: 24.033445 },
-            Vertex { x: 7.412868, y: 14.266953, z: 22.863152 },
-            Vertex { x: 7.763956, y: 10.503765, z: 23.771187 },
-            Vertex { x: 8.368601, y: 14.014959, z: 22.600893 },
-            Vertex { x: 3.893235, y: 11.524340, z: 24.833336 },
-            Vertex { x: 4.497880, y: 15.035534, z: 23.663042 },
-            Vertex { x: 4.848969, y: 11.272346, z: 24.571075 },
-            Vertex { x: 5.453613, y: 14.783541, z: 23.400784 },
-            Vertex { x: 0.978247, y: 12.292921, z: 25.633226 },
-            Vertex { x: 1.582891, y: 15.804115, z: 24.462933 },
-            Vertex { x: 1.933981, y: 12.040927, z: 25.370968 },
-            Vertex { x: 2.538626, y: 15.552121, z: 24.200672 },
+            Vertex { x: 18.468174, y: 7.681436, z: 20.833883, u: 0.0, v: 0.0},
+            Vertex { x: 19.072819, y: 11.192630, z: 19.663589, u: 0.0, v: 0.0 },
+            Vertex { x: 19.423908, y: 7.429442, z: 20.571625, u: 0.0, v: 0.0},
+            Vertex { x: 20.028553, y: 10.940637, z: 19.401331, u: 0.0, v: 0.0 },
+            Vertex { x: 15.553186, y: 8.450017, z: 21.633774, u: 0.0, v: 0.0},
+            Vertex { x: 16.157831, y: 11.961211, z: 20.463480, u: 0.0, v: 0.0 },
+            Vertex { x: 16.508921, y: 8.198023, z: 21.371515, u: 0.0, v: 0.0},
+            Vertex { x: 17.113564, y: 11.709217, z: 20.201221, u: 0.0, v: 0.0 },
+            Vertex { x: 12.638199, y: 9.218597, z: 22.433664, u: 0.0, v: 0.0},
+            Vertex { x: 13.242843, y: 12.729792, z: 21.263371, u: 0.0, v: 0.0 },
+            Vertex { x: 13.593933, y: 8.966604, z: 22.171406, u: 0.0, v: 0.0},
+            Vertex { x: 14.198576, y: 12.477798, z: 21.001112, u: 0.0, v: 0.0 },
+            Vertex { x: 9.723210, y: 9.987179, z: 23.233555, u: 0.0, v: 0.0 },
+            Vertex { x: 10.327855, y: 13.498373, z: 22.063261, u: 0.0, v: 0.0 },
+            Vertex { x: 10.678944, y: 9.735185, z: 22.971296, u: 0.0, v: 0.0 },
+            Vertex { x: 11.283588, y: 13.246380, z: 21.801003, u: 0.0, v: 0.0 },
+            Vertex { x: 6.808223, y: 10.755759, z: 24.033445, u: 0.0, v: 0.0 },
+            Vertex { x: 7.412868, y: 14.266953, z: 22.863152, u: 0.0, v: 0.0 },
+            Vertex { x: 7.763956, y: 10.503765, z: 23.771187, u: 0.0, v: 0.0 },
+            Vertex { x: 8.368601, y: 14.014959, z: 22.600893, u: 0.0, v: 0.0 },
+            Vertex { x: 3.893235, y: 11.524340, z: 24.833336, u: 0.0, v: 0.0 },
+            Vertex { x: 4.497880, y: 15.035534, z: 23.663042, u: 0.0, v: 0.0 },
+            Vertex { x: 4.848969, y: 11.272346, z: 24.571075, u: 0.0, v: 0.0 },
+            Vertex { x: 5.453613, y: 14.783541, z: 23.400784, u: 0.0, v: 0.0 },
+            Vertex { x: 0.978247, y: 12.292921, z: 25.633226, u: 0.0, v: 0.0 },
+            Vertex { x: 1.582891, y: 15.804115, z: 24.462933, u: 0.0, v: 0.0 },
+            Vertex { x: 1.933981, y: 12.040927, z: 25.370968, u: 0.0, v: 0.0 },
+            Vertex { x: 2.538626, y: 15.552121, z: 24.200672, u: 0.0, v: 0.0 },
 
             // o Plane.047_Plane.042
-            Vertex { x: -18.905333, y: 26.318699, z: -10.118521 },
-            Vertex { x: -30.899866, y: 12.653121, z: -8.870247 },
-            Vertex { x: -16.865187, y: 26.182327, z: 7.992091 },
-            Vertex { x: -28.859720, y: 12.516749, z: 9.240364 },
+            Vertex { x: -18.905333, y: 26.318699, z: -10.118521, u: 0.0, v: 0.0 },
+            Vertex { x: -30.899866, y: 12.653121, z: -8.870247, u: 0.0, v: 0.0 },
+            Vertex { x: -16.865187, y: 26.182327, z: 7.992091, u: 0.0, v: 0.0 },
+            Vertex { x: -28.859720, y: 12.516749, z: 9.240364, u: 0.0, v: 0.0 },
         ];
 
         assert_eq!(vertices, mesh.vertices)
@@ -555,49 +793,49 @@ mod tests {
         let expected_mesh = Mesh {
             vertices: vec![
                 // From alights.014_plane.051
-                Vertex { x: -6.070838, y: 1.759535, z: -26.802847 },
-                Vertex { x: -5.678808, y: 5.600095, z: -26.429026 },
-                Vertex { x: 3.241621, y: 0.874194, z: -27.473124 },
-                Vertex { x: 3.633651, y: 4.714754, z: -27.099302 },
+                Vertex { x: -6.070838, y: 1.759535, z: -26.802847, u: 0.0, v: 0.0 },
+                Vertex { x: -5.678808, y: 5.600095, z: -26.429026, u: 0.0, v: 0.0 },
+                Vertex { x: 3.241621, y: 0.874194, z: -27.473124, u: 0.0, v: 0.0 },
+                Vertex { x: 3.633651, y: 4.714754, z: -27.099302, u: 0.0, v: 0.0 },
                 // From alights.000_plane.049
-                Vertex { x: -18.872726, y: 1.170217, z: -5.146016 },
-                Vertex { x: -18.331558, y: 5.010777, z: -5.169862 },
-                Vertex { x: -12.906070, y: 0.284877, z: -12.327253 },
-                Vertex { x: -12.364902, y: 4.125437, z: -12.351101 },
+                Vertex { x: -18.872726, y: 1.170217, z: -5.146016, u: 0.0, v: 0.0 },
+                Vertex { x: -18.331558, y: 5.010777, z: -5.169862, u: 0.0, v: 0.0 },
+                Vertex { x: -12.906070, y: 0.284877, z: -12.327253, u: 0.0, v: 0.0 },
+                Vertex { x: -12.364902, y: 4.125437, z: -12.351101, u: 0.0, v: 0.0 },
                 // From alights.015_plane.050
-                Vertex { x: 18.468174, y: 7.681436, z: 20.833883 },
-                Vertex { x: 19.072819, y: 11.192630, z: 19.663589 },
-                Vertex { x: 19.423908, y: 7.429442, z: 20.571625 },
-                Vertex { x: 20.028553, y: 10.940637, z: 19.401331 },
-                Vertex { x: 15.553186, y: 8.450017, z: 21.633774 },
-                Vertex { x: 16.157831, y: 11.961211, z: 20.463480 },
-                Vertex { x: 16.508921, y: 8.198023, z: 21.371515 },
-                Vertex { x: 17.113564, y: 11.709217, z: 20.201221 },
-                Vertex { x: 12.638199, y: 9.218597, z: 22.433664 },
-                Vertex { x: 13.242843, y: 12.729792, z: 21.263371 },
-                Vertex { x: 13.593933, y: 8.966604, z: 22.171406 },
-                Vertex { x: 14.198576, y: 12.477798, z: 21.001112 },
-                Vertex { x: 9.723210, y: 9.987179, z: 23.233555 },
-                Vertex { x: 10.327855, y: 13.498373, z: 22.063261 },
-                Vertex { x: 10.678944, y: 9.735185, z: 22.971296 },
-                Vertex { x: 11.283588, y: 13.246380, z: 21.801003 },
-                Vertex { x: 6.808223, y: 10.755759, z: 24.033445 },
-                Vertex { x: 7.412868, y: 14.266953, z: 22.863152 },
-                Vertex { x: 7.763956, y: 10.503765, z: 23.771187 },
-                Vertex { x: 8.368601, y: 14.014959, z: 22.600893 },
-                Vertex { x: 3.893235, y: 11.524340, z: 24.833336 },
-                Vertex { x: 4.497880, y: 15.035534, z: 23.663042 },
-                Vertex { x: 4.848969, y: 11.272346, z: 24.571075 },
-                Vertex { x: 5.453613, y: 14.783541, z: 23.400784 },
-                Vertex { x: 0.978247, y: 12.292921, z: 25.633226 },
-                Vertex { x: 1.582891, y: 15.804115, z: 24.462933 },
-                Vertex { x: 1.933981, y: 12.040927, z: 25.370968 },
-                Vertex { x: 2.538626, y: 15.552121, z: 24.200672 },
+                Vertex { x: 18.468174, y: 7.681436, z: 20.833883, u: 0.0, v: 0.0 },
+                Vertex { x: 19.072819, y: 11.192630, z: 19.663589, u: 0.0, v: 0.0 },
+                Vertex { x: 19.423908, y: 7.429442, z: 20.571625, u: 0.0, v: 0.0 },
+                Vertex { x: 20.028553, y: 10.940637, z: 19.401331, u: 0.0, v: 0.0 },
+                Vertex { x: 15.553186, y: 8.450017, z: 21.633774, u: 0.0, v: 0.0 },
+                Vertex { x: 16.157831, y: 11.961211, z: 20.463480, u: 0.0, v: 0.0 },
+                Vertex { x: 16.508921, y: 8.198023, z: 21.371515, u: 0.0, v: 0.0 },
+                Vertex { x: 17.113564, y: 11.709217, z: 20.201221, u: 0.0, v: 0.0 },
+                Vertex { x: 12.638199, y: 9.218597, z: 22.433664, u: 0.0, v: 0.0 },
+                Vertex { x: 13.242843, y: 12.729792, z: 21.263371, u: 0.0, v: 0.0 },
+                Vertex { x: 13.593933, y: 8.966604, z: 22.171406, u: 0.0, v: 0.0 },
+                Vertex { x: 14.198576, y: 12.477798, z: 21.001112, u: 0.0, v: 0.0 },
+                Vertex { x: 9.723210, y: 9.987179, z: 23.233555, u: 0.0, v: 0.0 },
+                Vertex { x: 10.327855, y: 13.498373, z: 22.063261, u: 0.0, v: 0.0 },
+                Vertex { x: 10.678944, y: 9.735185, z: 22.971296, u: 0.0, v: 0.0 },
+                Vertex { x: 11.283588, y: 13.246380, z: 21.801003, u: 0.0, v: 0.0 },
+                Vertex { x: 6.808223, y: 10.755759, z: 24.033445, u: 0.0, v: 0.0 },
+                Vertex { x: 7.412868, y: 14.266953, z: 22.863152, u: 0.0, v: 0.0 },
+                Vertex { x: 7.763956, y: 10.503765, z: 23.771187, u: 0.0, v: 0.0 },
+                Vertex { x: 8.368601, y: 14.014959, z: 22.600893, u: 0.0, v: 0.0 },
+                Vertex { x: 3.893235, y: 11.524340, z: 24.833336, u: 0.0, v: 0.0 },
+                Vertex { x: 4.497880, y: 15.035534, z: 23.663042, u: 0.0, v: 0.0 },
+                Vertex { x: 4.848969, y: 11.272346, z: 24.571075, u: 0.0, v: 0.0 },
+                Vertex { x: 5.453613, y: 14.783541, z: 23.400784, u: 0.0, v: 0.0 },
+                Vertex { x: 0.978247, y: 12.292921, z: 25.633226, u: 0.0, v: 0.0 },
+                Vertex { x: 1.582891, y: 15.804115, z: 24.462933, u: 0.0, v: 0.0 },
+                Vertex { x: 1.933981, y: 12.040927, z: 25.370968, u: 0.0, v: 0.0 },
+                Vertex { x: 2.538626, y: 15.552121, z: 24.200672, u: 0.0, v: 0.0 },
                 // From plane.047_plane.042
-                Vertex { x: -18.905333, y: 26.318699, z: -10.118521 },
-                Vertex { x: -30.899866, y: 12.653121, z: -8.870247 },
-                Vertex { x: -16.865187, y: 26.182327, z: 7.992091 },
-                Vertex { x: -28.859720, y: 12.516749, z: 9.240364 },
+                Vertex { x: -18.905333, y: 26.318699, z: -10.118521, u: 0.0, v: 0.0 },
+                Vertex { x: -30.899866, y: 12.653121, z: -8.870247, u: 0.0, v: 0.0 },
+                Vertex { x: -16.865187, y: 26.182327, z: 7.992091, u: 0.0, v: 0.0 },
+                Vertex { x: -28.859720, y: 12.516749, z: 9.240364, u: 0.0, v: 0.0 },
             ],
             faces: vec![
                 Face { v1: 0, v2: 1, v3: 3, color_id: 1},
