@@ -434,6 +434,8 @@ impl GlbParser {
             current_image_index = Some(texture_info.texture().source().index());
         }
 
+        let base_color = pbr.base_color_factor();
+
         let vertex_offset = self.vertices.len();
 
         let (vertex_positions, uv_values): (Vec<[f32; 3]>, Vec<[f32; 2]>) = match (vertex_positions_op, uv_values_op) {
@@ -476,7 +478,7 @@ impl GlbParser {
                 let v2 = chunk[1] as usize + vertex_offset;
                 let v3 = chunk[2] as usize + vertex_offset;
 
-                let color_id = self.find_color((v1, v2, v3), current_image_index, images);
+                let color_id = self.find_color((v1, v2, v3), current_image_index, images, base_color);
                 let triangle = Face {v1, v2, v3, color_id};
 
                 self.faces.push(triangle);
@@ -493,31 +495,42 @@ impl GlbParser {
                 let v2 = i + 1 + vertex_offset;
                 let v3 = i + 2 + vertex_offset;
 
-                let color_id = self.find_color((v1, v2, v3), current_image_index, images);
+                let color_id = self.find_color((v1, v2, v3), current_image_index, images, base_color);
                 self.faces.push(Face {v1, v2, v3, color_id});
             }
         }
 
     }
 
-    fn find_color(&mut self, vertecies: (usize, usize, usize), image_index: Option<usize>, images: &Vec<RgbaImage>) -> usize{
+    fn find_color(&mut self, vertecies: (usize, usize, usize), image_index: Option<usize>, images: &Vec<RgbaImage>, base_color: [f32; 4]) -> usize{
         let rgba_image = match image_index{
             Some(index) => &images[index],
-            None => return 1,
+            None => {
+                let color = Vertex {
+                    x: base_color[0],
+                    y: base_color[1],
+                    z: base_color[2],
+                    u: 0.0,
+                    v: 0.0,
+                };
+
+                self.palette_manager.add_color(color.clone());
+                let color_id = self.palette_manager.get_index_from_color(color).copied();
+
+                return color_id.unwrap_or(1)
+            },
         };
 
         let parsed_vertecies = [self.vertices[vertecies.0].clone(), self.vertices[vertecies.1].clone(), self.vertices[vertecies.2].clone()];
         let mut color_id: Option<usize> = None;
 
         for vertex in parsed_vertecies{
-            if vertex.u < 0.0 || vertex.v < 0.0 {
-                continue;
-            }
-
             let u_wrapped = vertex.u.rem_euclid(1.0);
             let v_wrapped = vertex.v.rem_euclid(1.0);   
 
             let color = PaletteManager::get_color_from_position(&rgba_image, (u_wrapped, v_wrapped), false);
+
+            println!("{:?}", color);
 
             self.palette_manager.add_color(color.clone());
             color_id = self.palette_manager.get_index_from_color(color).copied();
@@ -526,6 +539,8 @@ impl GlbParser {
                 break;
             }
         }
+
+        println!("{:?}", color_id);
 
         color_id.unwrap_or(1)
     }
