@@ -256,4 +256,6 @@ fn reset_and_upload_world(app: &mut App) {
     
     let empty_indexer = vec![0xFFFFFFFFu32; indexer_size as usize];
     state.queue.write_buffer(&state.world_buffer, 0, bytemuck::cast_slice(&empty_indexer));
+
+    app.world_changed = true;
 }

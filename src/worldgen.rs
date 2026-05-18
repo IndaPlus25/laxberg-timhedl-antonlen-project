@@ -12,6 +12,7 @@ struct BiomeNoise {
     mountains: Fbm<Perlin>
 }
 
+#[derive(Copy, Clone)]
 pub struct BlockColors {
     pub grass: u32,
     pub stone: u32,
@@ -52,6 +53,11 @@ pub fn generate_single_chunk(colors: &BlockColors, seed: u32, chunk_coord: &V3i)
     let functions = BiomeNoise::new(seed);
     let simplex = Simplex::new(seed);
     let biome_closeness = 0.001;
+
+    // Skip entire chunk if above limit
+    if chunk_coord.y > 6 {
+        return flat_data;
+    }
 
     for dx in 0..32 {
         for dz in 0..32 {
