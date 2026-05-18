@@ -57,7 +57,7 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
         CliCommand::Quit => event_loop.exit(),
         CliCommand::Parse { path, min_width } => {
             println!("Parsing file to readable format...");
-            let mesh = match file_parser::file_parse_interface(&path) {
+            let mut mesh = match file_parser::file_parse_interface(&path) {
                 Ok(mesh) => mesh,
                 Err(e) => {
                     println!("{}, please try again", e);
@@ -65,13 +65,15 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
                 },
             };
 
-            let mut colors: Vec<[f32; 4]> = Vec::new();
+            let color_offset = app.colours.len();
 
-            for color in &mesh.colors {
-                colors.push([color.x, color.y, color.z, 0.0]);
+            for face in &mut mesh.faces {
+                face.color_id += color_offset;
             }
 
-            app.colours = colors;
+            for color in &mesh.colors {
+                app.colours.push([color.x, color.y, color.z, 0.0]);
+            }
 
             println!("Translating points to voxel geometry...");
             let world_data = voxelizer::voxel_grid_from_triangles(mesh, min_width);
