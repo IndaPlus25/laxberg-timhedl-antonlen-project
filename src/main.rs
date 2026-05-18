@@ -12,6 +12,11 @@ mod renderer;
 mod cli;
 mod state;
 
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use std::collections::HashSet;
+use std::thread;
+
 use std::{collections::HashMap, f32::consts::FRAC_2_PI};
 use std::rc::Rc;
 use std::io::BufRead;
@@ -22,7 +27,6 @@ use winit::{
     window::{Window, WindowId},
 };
 use std::time::Instant; 
-use std::sync::Arc;
 use wgpu::util::DeviceExt;
 use colored::Colorize;
 
@@ -36,6 +40,9 @@ use crate::cli::*;
 use crate::worldgen::generate_random_world;
 
 const DEFAULT_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 0.0];
+const STONE_COLOR: [f32; 4] = [136./255., 140./255., 141./255., 0.0];
+const GRASS_COLOR: [f32; 4] = [94./255., 157./255., 82./255., 0.0];
+const WATER_COLOR: [f32; 4] = [63./255., 118./255., 228./255., 0.6];
 
 pub struct Player {
     pub position: V3,
@@ -85,6 +92,17 @@ impl KeyPresses {
 struct App {
     state: Option<State>,
     chunks: HashMap<V3i, Chunk>,
+
+    use_worldgen: bool,
+    worldgen_chunks: HashMap<V3i, Chunk>,
+    seed: u32,
+    block_colors: worldgen::BlockColors,
+    world_changed: bool,
+     
+    // Multithreading fields
+    chunk_req_tx: mpsc::Sender<V3i>,
+    chunk_res_rx: mpsc::Receiver<(V3i, Vec<u32>)>,
+    generating_chunks: HashSet<V3i>,
 
     player: Player,
     render_distance: u32,
@@ -185,7 +203,34 @@ impl ApplicationHandler<CliCommand> for App {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                state.process_chunk_loading(&self.player, self.render_distance, &self.chunks);
+               
+                if self.world_changed {
+                    // Generate combined chunks to send to rendering
+                    let mut new_chunks = HashMap::<V3i, Chunk>::new();
+                    for key in self.worldgen_chunks.keys() {
+                        let val = self.worldgen_chunks.get(key).unwrap();
+                        let mut n = Chunk {
+                            data: val.data.clone(),
+                            min_pos: val.min_pos,
+                            max_pos: val.max_pos
+                        };
+
+                        if let Some(loaded) = self.chunks.get(&key) {
+                            n.add_chunk(loaded);
+                        };
+                        new_chunks.insert(*key, n);
+                    };
+
+                    // Send the combined chunks to processing
+                    state.process_chunk_loading(&self.player, self.render_distance, &new_chunks);
+                    self.world_changed = false;
+                    
+                } else if !self.use_worldgen {
+
+                    // Send the parsed chunks to processing
+                    state.process_chunk_loading(&self.player, self.render_distance, &self.chunks);
+                    
+                }
 
                 state.render(&self.player, self.render_distance, &self.colours, &self.lighting);
                 // Emits a new redraw requested event.
@@ -207,6 +252,56 @@ impl ApplicationHandler<CliCommand> for App {
                     //println!("position");
                     //println!("x: {}, y: {}, z: {}", self.player.position.x, self.player.position.y, self.player.position.z);
                 }
+
+                //=============================
+                // Worldgen:
+                if self.use_worldgen {
+                    // 1. Process received (finished) chunks
+                        while let Ok((pos, chunk_data)) = self.chunk_res_rx.try_recv() {
+                            // Build the chunk on the main thread (assuming build_chunk interfaces with the GPU or renderer)
+                            let data = build_chunk(&chunk_data);
+                            let chunk = Chunk { 
+                                data, 
+                                min_pos: V3 { x: 0.0, y: 0.0, z: 0.0 }, 
+                                max_pos: V3 { x: 32.0, y: 32.0, z: 32.0 }
+                            };
+                            self.worldgen_chunks.insert(pos, chunk);
+                            self.generating_chunks.remove(&pos); // It's done, remove from active queue
+                            self.world_changed = true;
+                        }
+
+                        let player_center = self.player.position;
+                        let radius = self.render_distance as i32;
+
+                        // 2. Keep chunks within render distance, remove the rest
+                        self.worldgen_chunks.retain(|key, _| {
+                            let dx = (key.x - ((player_center.x / 32.0) as i32)).abs() as u32;
+                            let dy = (key.y - ((player_center.y / 32.0) as i32)).abs() as u32;
+                            let dz = (key.z - ((player_center.z / 32.0) as i32)).abs() as u32;
+                            dx <= self.render_distance && dy <= self.render_distance && dz <= self.render_distance
+                        });
+
+                        // 3. Request new chunks asynchronously
+                        let px = (player_center.x / 32.0) as i32;
+                        let py = (player_center.y / 32.0) as i32;
+                        let pz = (player_center.z / 32.0) as i32;
+
+                        for y in (py - radius)..=(py + radius) {
+                            for x in (px - radius)..=(px + radius) {
+                                for z in (pz - radius)..=(pz + radius) {
+                                    let pos = V3i {x, y, z};
+
+                                    // If we don't have it, AND we aren't currently generating it -> Request it
+                                    if !self.worldgen_chunks.contains_key(&pos) && !self.generating_chunks.contains(&pos) {
+                                        self.generating_chunks.insert(pos);
+                                        let _ = self.chunk_req_tx.send(pos); 
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+
                 //=============================
                 //movement
                 let delta_time = Instant::now().duration_since(self.last_redraw).as_secs_f32();
@@ -373,7 +468,7 @@ fn main() {
     });
 
     let chunks = HashMap::new();
-    let colours = vec![DEFAULT_COLOR, DEFAULT_COLOR];
+    let colours = vec![DEFAULT_COLOR, DEFAULT_COLOR, STONE_COLOR, GRASS_COLOR, WATER_COLOR];
     let player = Player {
         position: V3{
             x: 32.0*2.0,
@@ -392,6 +487,44 @@ fn main() {
         time: 0.8,
     };
 
+    // ===============================
+    // MULTITHREADING CHUNK GENERATION
+    // ===============================
+    let (req_tx, req_rx) = mpsc::channel::<V3i>();
+    let (res_tx, res_rx) = mpsc::channel::<(V3i, Vec<u32>)>();
+
+    // Wrap the receiver in an Arc<Mutex> so multiple threads can pull from it
+    let shared_req_rx = Arc::new(Mutex::new(req_rx));
+    let seed = 1227;
+    let block_colors = worldgen::BlockColors { grass: 3, stone: 2, water: 4 };
+
+    // Spawn 4 worker threads
+    for _ in 0..4 {
+        let thread_rx = Arc::clone(&shared_req_rx);
+        let thread_tx = res_tx.clone();
+    
+        thread::spawn(move || {
+            loop {
+                // Safely grab the next requested chunk coordinate
+                let pos = {
+                    let lock = thread_rx.lock().unwrap();
+                    match lock.recv() {
+                        Ok(p) => p,
+                        Err(_) => break, // Channel closed, exit thread
+                    }
+                };
+
+                // Generate the heavy noise data off the main thread!
+                let chunk_data = worldgen::generate_single_chunk(&block_colors, seed, &pos);
+            
+                // Send it back to the main thread
+                if thread_tx.send((pos, chunk_data)).is_err() {
+                    break;
+                }
+            }
+        });
+    }
+
     let mut app = App {
         state: None,
         chunks, 
@@ -406,6 +539,14 @@ fn main() {
         lighting,
         key_presses: KeyPresses::new(),
         last_redraw: Instant::now(),
+        worldgen_chunks: HashMap::new(),
+        seed: 1227,
+        use_worldgen: false,
+        block_colors: worldgen::BlockColors { grass: 3, stone: 2, water: 4 },
+        chunk_req_tx: req_tx,
+        chunk_res_rx: res_rx,
+        generating_chunks: HashSet::new(),
+        world_changed: true,
     };
 
     println!("Launching Raycaster...");

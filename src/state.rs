@@ -18,7 +18,7 @@ pub struct PlayerUniform {
     pub position: [f32; 3],
     pub render_distance: u32,
     pub top_left: [f32; 3],
-    pub _padding2: u32,
+    pub grid_size: u32,
     pub delta_x: [f32; 3],
     pub _padding3: u32,
     pub delta_y: [f32; 3],
@@ -146,11 +146,13 @@ impl State {
 
         let surface_format = wgpu::TextureFormat::Bgra8Unorm;
 
+        let grid_size = (render_distance * 2 + 1).next_power_of_two();
+
         let initial_player = PlayerUniform {
             position: [0.0, 0.0, 0.0],
             render_distance,
             top_left: [0.0, 0.0, 0.0],
-            _padding2: 0,
+            grid_size,
             delta_x: [0.0, 0.0, 0.0],
             _padding3: 0,
             delta_y: [0.0, 0.0, 0.0],
@@ -165,7 +167,6 @@ impl State {
             sky_color: [0.0, 0.0, 0.0, 1.0],
         };
 
-        let grid_size = (render_distance * 2 + 1).next_power_of_two();
         let indexer_size = grid_size * grid_size * grid_size;
 
         let pixel_count = (size.width * size.height) as wgpu::BufferAddress;
@@ -463,7 +464,7 @@ impl State {
             position: [player.position.x, player.position.y, player.position.z],
             render_distance,
             top_left: [result.0.x, result.0.y, result.0.z],
-            _padding2: 0,
+            grid_size: self.grid_size,
             delta_x: [result.1.x, result.1.y, result.1.z],
             _padding3: 0,
             delta_y: [result.2.x, result.2.y, result.2.z],
