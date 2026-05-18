@@ -86,6 +86,9 @@ struct App {
     state: Option<State>,
     chunks: HashMap<V3i, Chunk>,
 
+    worldgen_chunks: HashMap<V3i, Chunk>,
+    seed: u32,
+
     player: Player,
     render_distance: u32,
     max_heap_bytes: u64,
@@ -185,7 +188,24 @@ impl ApplicationHandler<CliCommand> for App {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                state.process_chunk_loading(&self.player, self.render_distance, &self.chunks);
+                // Generate combined chunks to send to rendering
+                let mut new_chunks = HashMap::<V3i, Chunk>::new();
+                for key in self.worldgen_chunks.keys() {
+                    let val = self.worldgen_chunks.get(key).unwrap();
+                    let mut n = Chunk {
+                        data: val.data.clone(),
+                        min_pos: val.min_pos,
+                        max_pos: val.max_pos
+                    };
+
+                    if let Some(loaded) = self.chunks.get(&key) {
+                        n.add_chunk(loaded);
+                    };
+                    new_chunks.insert(*key, n);
+                };
+
+                // Send the combined chunks to processing
+                state.process_chunk_loading(&self.player, self.render_distance, &new_chunks);
 
                 state.render(&self.player, self.render_distance, &self.colours, &self.lighting);
                 // Emits a new redraw requested event.
@@ -207,6 +227,34 @@ impl ApplicationHandler<CliCommand> for App {
                     //println!("position");
                     //println!("x: {}, y: {}, z: {}", self.player.position.x, self.player.position.y, self.player.position.z);
                 }
+
+                //=============================
+                // Worldgen:
+                let player_center = self.player.position;
+                let radius = self.render_distance as i32;
+                for y in 0..=5{
+                    for x in (((player_center.x / 32.0) as i32) - radius)..=(((player_center.x / 32.0) as i32) + radius) {
+                        for z in (((player_center.z / 32.0) as i32) - radius)..=(((player_center.z / 32.0) as i32) + radius) {
+                            let pos = V3i {x, y, z};
+
+                            // Skip if exists
+                            if let Some(_) = self.worldgen_chunks.get(&pos) {
+                                continue;
+                            };
+
+                            // Create chunks
+                            let colors = worldgen::BlockColors { grass: 1, stone: 1, water: 1 };
+                            let chunk_data = worldgen::generate_single_chunk(&colors, self.seed, &pos);
+                            let data = build_chunk(&chunk_data);
+                            let chunk = Chunk { data, min_pos: V3 { x: 0.0, y: 0.0, z: 0.0 }, max_pos: V3 { x: 32.0, y: 32.0, z: 32.0 }};
+
+                            // Add chunk
+                            self.worldgen_chunks.insert(pos, chunk);
+                        }
+                    }
+                }
+
+
                 //=============================
                 //movement
                 let delta_time = Instant::now().duration_since(self.last_redraw).as_secs_f32();
@@ -400,12 +448,15 @@ fn main() {
         player,
         current_acc_fps: 0.0,
         //använd bara 2^a render distances, ex: 4,8,16,32,64 ...
-        render_distance: 16,
+        render_distance: 32,
         max_heap_bytes: 512 * 1024 * 1024, // 512 MB
         colours,
         lighting,
         key_presses: KeyPresses::new(),
         last_redraw: Instant::now(),
+        worldgen_chunks: HashMap::new(),
+        seed: 1227,
+
     };
 
     println!("Launching Raycaster...");
