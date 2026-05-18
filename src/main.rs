@@ -86,6 +86,7 @@ struct App {
     state: Option<State>,
     chunks: HashMap<V3i, Chunk>,
 
+    use_worldgen: bool,
     worldgen_chunks: HashMap<V3i, Chunk>,
     seed: u32,
 
@@ -188,24 +189,32 @@ impl ApplicationHandler<CliCommand> for App {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                // Generate combined chunks to send to rendering
-                let mut new_chunks = HashMap::<V3i, Chunk>::new();
-                for key in self.worldgen_chunks.keys() {
-                    let val = self.worldgen_chunks.get(key).unwrap();
-                    let mut n = Chunk {
-                        data: val.data.clone(),
-                        min_pos: val.min_pos,
-                        max_pos: val.max_pos
+                if self.use_worldgen {
+                    // Generate combined chunks to send to rendering
+                    let mut new_chunks = HashMap::<V3i, Chunk>::new();
+                    for key in self.worldgen_chunks.keys() {
+                        let val = self.worldgen_chunks.get(key).unwrap();
+                        let mut n = Chunk {
+                            data: val.data.clone(),
+                            min_pos: val.min_pos,
+                            max_pos: val.max_pos
+                        };
+
+                        if let Some(loaded) = self.chunks.get(&key) {
+                            n.add_chunk(loaded);
+                        };
+                        new_chunks.insert(*key, n);
                     };
 
-                    if let Some(loaded) = self.chunks.get(&key) {
-                        n.add_chunk(loaded);
-                    };
-                    new_chunks.insert(*key, n);
-                };
+                    // Send the combined chunks to processing
+                    state.process_chunk_loading(&self.player, self.render_distance, &new_chunks);
+                    
+                } else {
 
-                // Send the combined chunks to processing
-                state.process_chunk_loading(&self.player, self.render_distance, &new_chunks);
+                    // Send the parsed chunks to processing
+                    state.process_chunk_loading(&self.player, self.render_distance, &self.chunks);
+                    
+                }
 
                 state.render(&self.player, self.render_distance, &self.colours, &self.lighting);
                 // Emits a new redraw requested event.
@@ -230,36 +239,38 @@ impl ApplicationHandler<CliCommand> for App {
 
                 //=============================
                 // Worldgen:
-                let player_center = self.player.position;
-                let radius = self.render_distance as i32;
+                if self.use_worldgen {
+                    let player_center = self.player.position;
+                    let radius = self.render_distance as i32;
 
-                // Keep the chunks within the render distance, and remove the other
-                self.worldgen_chunks.retain(|key, _| {
-                    let dx = (key.x - ((player_center.x / 32.0) as i32)).abs() as u32;
-                    let dy = (key.y - ((player_center.y / 32.0) as i32)).abs() as u32;
-                    let dz = (key.z - ((player_center.z / 32.0) as i32)).abs() as u32;
+                    // Keep the chunks within the render distance, and remove the other
+                    self.worldgen_chunks.retain(|key, _| {
+                        let dx = (key.x - ((player_center.x / 32.0) as i32)).abs() as u32;
+                        let dy = (key.y - ((player_center.y / 32.0) as i32)).abs() as u32;
+                        let dz = (key.z - ((player_center.z / 32.0) as i32)).abs() as u32;
 
-                    dx <= self.render_distance && dy <= self.render_distance && dz <= self.render_distance
-                });
+                        dx <= self.render_distance && dy <= self.render_distance && dz <= self.render_distance
+                    });
                 
-                for y in 0..=5{
-                    for x in (((player_center.x / 32.0) as i32) - radius)..=(((player_center.x / 32.0) as i32) + radius) {
-                        for z in (((player_center.z / 32.0) as i32) - radius)..=(((player_center.z / 32.0) as i32) + radius) {
-                            let pos = V3i {x, y, z};
+                    for y in 0..=5{
+                        for x in (((player_center.x / 32.0) as i32) - radius)..=(((player_center.x / 32.0) as i32) + radius) {
+                            for z in (((player_center.z / 32.0) as i32) - radius)..=(((player_center.z / 32.0) as i32) + radius) {
+                                let pos = V3i {x, y, z};
 
-                            // Skip if exists
-                            if let Some(_) = self.worldgen_chunks.get(&pos) {
-                                continue;
-                            };
+                                // Skip if exists
+                                if let Some(_) = self.worldgen_chunks.get(&pos) {
+                                    continue;
+                                };
 
-                            // Create chunks
-                            let colors = worldgen::BlockColors { grass: 1, stone: 1, water: 1 };
-                            let chunk_data = worldgen::generate_single_chunk(&colors, self.seed, &pos);
-                            let data = build_chunk(&chunk_data);
-                            let chunk = Chunk { data, min_pos: V3 { x: 0.0, y: 0.0, z: 0.0 }, max_pos: V3 { x: 32.0, y: 32.0, z: 32.0 }};
+                                // Create chunks
+                                let colors = worldgen::BlockColors { grass: 1, stone: 1, water: 1 };
+                                let chunk_data = worldgen::generate_single_chunk(&colors, self.seed, &pos);
+                                let data = build_chunk(&chunk_data);
+                                let chunk = Chunk { data, min_pos: V3 { x: 0.0, y: 0.0, z: 0.0 }, max_pos: V3 { x: 32.0, y: 32.0, z: 32.0 }};
 
-                            // Add chunk
-                            self.worldgen_chunks.insert(pos, chunk);
+                                // Add chunk
+                                self.worldgen_chunks.insert(pos, chunk);
+                            }
                         }
                     }
                 }
@@ -466,6 +477,7 @@ fn main() {
         last_redraw: Instant::now(),
         worldgen_chunks: HashMap::new(),
         seed: 1227,
+        use_worldgen: false,
 
     };
 

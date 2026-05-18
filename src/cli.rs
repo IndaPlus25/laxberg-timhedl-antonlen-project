@@ -15,6 +15,7 @@ pub enum CliCommand {
     Time{time: f32, speed: f32},
     Help,
     Clear,
+    Worldgen(bool),
 }
 
 pub fn parse_command(input: &str) -> Option<CliCommand> {
@@ -42,6 +43,11 @@ pub fn parse_command(input: &str) -> Option<CliCommand> {
         }),
         ["help"] => Some(CliCommand::Help),
         ["clear"] => Some(CliCommand::Clear),
+        ["worldgen", on] => Some(CliCommand::Worldgen(
+            if on.to_lowercase() == "on" {true}
+            else if on.to_lowercase() == "off" {false}
+            else {return None}
+        )),
         _ => None,
     }
 }
@@ -178,6 +184,20 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
         CliCommand::Clear => {
             app.chunks.clear();
             reset_and_upload_world(app);            
+        }
+        CliCommand::Worldgen(on) => {
+            // Skip if state not changed
+            if app.use_worldgen == on {
+                return;
+            }
+
+            // Clear if off
+            if !on {
+                app.worldgen_chunks.clear();
+            }
+
+            app.use_worldgen = on;
+            reset_and_upload_world(app);
         }
     }
 }
