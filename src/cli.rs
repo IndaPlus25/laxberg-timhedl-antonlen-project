@@ -1,8 +1,7 @@
-use wgpu::util::DeviceExt;
 use winit::event_loop::ActiveEventLoop;
 use colored::Colorize;
 
-use crate::{App, builder::{pack_world_to_gpu, to_chunks}, file_handler::{load_file_interface, save_file_interface}, file_parser, voxelizer};
+use crate::{App, builder::{to_chunks}, file_handler::{load_file_interface, save_file_interface}, file_parser, voxelizer};
 
 #[derive(Debug)]
 pub enum CliCommand {

@@ -3,8 +3,6 @@ use crate::vecmath::*;
 
 use std::collections::HashMap;
 
-use std::collections::VecDeque;
-
 const BRANCH_MARKER: u32 = u32::MAX;
 const AIR_MARKER: u32 = 0;
 
