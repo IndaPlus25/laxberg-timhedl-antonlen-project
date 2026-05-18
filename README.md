@@ -15,11 +15,11 @@ A GPU-accelerated, raytraced voxel engine written in Rust and WGPU. Project Voxi
 
 ## Showcase
 
-![alt text](https://github.com/IndaPlus25/laxberg-timhedl-antonlen-project/showcase-images/A-Castles-Story.png) 
+![Combining Models Showcase](showcase-images/A-Castles-Story.png) 
 
-![alt text](https://github.com/IndaPlus25/laxberg-timhedl-antonlen-project/showcase-images/Combining-Models.png) 
+![Combining Models Showcase](showcase-images/Combining-Models.png) 
 
-![alt text](https://github.com/IndaPlus25/laxberg-timhedl-antonlen-project/showcase-images/Stunning-Landscape.png) 
+![Combining Models Showcase](showcase-images/Stunning-Landscape.png) 
 
 ## Features
 
