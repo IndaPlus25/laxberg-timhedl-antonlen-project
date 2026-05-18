@@ -64,15 +64,15 @@ impl Chunk {
         }
 
         let mut s_val = self_val;
-        let mut s_is_leaf = self_is_leaf;
+        let mut _s_is_leaf = self_is_leaf;
 
         // If self is a solid leaf but 'other' specifies sub-details, we must subdivide self 
         // into a parent with 8 leaf children so we can merge the partial 'other' data into it.
-        if s_is_leaf {
+        if _s_is_leaf {
             let new_pointer = self.data.len() as u32;
             self.data.extend(std::iter::repeat(s_val).take(8));
             s_val = (0xFF << 24) | (0xFF << 16) | new_pointer;
-            s_is_leaf = false;
+            _s_is_leaf = false;
         }
 
         let s_pointer = get_ending(s_val);
@@ -222,7 +222,7 @@ impl Chunk {
     }
 }
 //32x32x32 non-octree optimized chunk, raw data
-pub struct FlatChunk {
+pub struct _FlatChunk {
 
     pub data: Vec<u32>,
     pub min_pos: V3,
@@ -231,7 +231,7 @@ pub struct FlatChunk {
 }
 
 
-
+#[allow(dead_code)]
 pub fn cast_ray(ray: &Ray, chunks: &HashMap<V3i, Chunk>, limit: u32) -> Option<IntersectionData> {
     let chunk_size = 32.0;
 
@@ -404,7 +404,7 @@ fn proc_subtree(ray: &Ray, chunk: &Chunk, current: u32, entry: V3, exit: V3, dir
 
             if is_leaf(current, true_sub_voxel) {
                 let material = get_ending(node_at_index);
-                return Some(IntersectionData { ray: *ray, voxel_data: material });
+                return Some(IntersectionData { _ray: *ray, _voxel_data: material });
             } else {
                 let sub_entry = V3 {
                     x: if (current_sub_voxel & 1) != 0 { mid.x } else { entry.x },
@@ -502,7 +502,7 @@ mod macro_traversal_tests {
         
         assert!(result.is_some(), "Ray failed to cross empty chunks to hit target.");
         if let Some(hit) = result {
-            assert_eq!(hit.voxel_data, 0x1111, "Ray hit something, but not the target chunk data.");
+            assert_eq!(hit._voxel_data, 0x1111, "Ray hit something, but not the target chunk data.");
         }
     }
 
@@ -545,7 +545,7 @@ mod macro_traversal_tests {
         
         assert!(result.is_some(), "Failed to traverse diagonally backwards across chunk boundaries.");
         if let Some(hit) = result {
-            assert_eq!(hit.voxel_data, 0x3333);
+            assert_eq!(hit._voxel_data, 0x3333);
         }
     }
 
@@ -628,7 +628,7 @@ mod macro_traversal_tests {
         
         assert!(result.is_some(), "Ray should have hit voxel 0");
         if let Some(intersect) = result {
-            assert_eq!(intersect.voxel_data, 0x9999, "Returned incorrect payload"); 
+            assert_eq!(intersect._voxel_data, 0x9999, "Returned incorrect payload"); 
         }
     }
 
@@ -658,7 +658,7 @@ mod macro_traversal_tests {
         
         assert!(result.is_some(), "Negative ray reflection failed to hit voxel 7");
         if let Some(intersect) = result {
-            assert_eq!(intersect.voxel_data, 0x7777, "Hit the right voxel, but got the wrong data");
+            assert_eq!(intersect._voxel_data, 0x7777, "Hit the right voxel, but got the wrong data");
         }
     }
 
@@ -700,7 +700,7 @@ mod macro_traversal_tests {
 
         assert!(result.is_some(), "Ray completely missed the deep voxel!");
         if let Some(intersect) = result {
-            assert_eq!(intersect.voxel_data, 0xCAFE, "Hit the wrong voxel or extracted wrong data!");
+            assert_eq!(intersect._voxel_data, 0xCAFE, "Hit the wrong voxel or extracted wrong data!");
         }
     } 
 }

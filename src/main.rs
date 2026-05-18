@@ -17,27 +17,21 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashSet;
 use std::thread;
 
-use std::{collections::HashMap, f32::consts::FRAC_2_PI};
-use std::rc::Rc;
+use std::collections::HashMap;
 use std::io::BufRead;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop, OwnedDisplayHandle},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     window::{Window, WindowId},
 };
 use std::time::Instant; 
-use wgpu::util::DeviceExt;
-use colored::Colorize;
 
-use crate::file_handler::save_file_interface;
 use crate::vecmath::*;
 use crate::octree::*;
 use crate::builder::*;
-use crate::renderer::*;
 use crate::state::*;
 use crate::cli::*;
-use crate::worldgen::generate_random_world;
 
 const DEFAULT_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 0.0];
 const STONE_COLOR: [f32; 4] = [136./255., 140./255., 141./255., 0.0];
@@ -58,33 +52,33 @@ struct Lighting {
 }
 
 struct KeyPresses {
-    W: bool,
-    A: bool,
-    S: bool,
-    D: bool,
-    Shift: bool,
-    Space: bool,
-    Ctrl: bool,
-    Up: bool,
-    Left: bool,
-    Down: bool,
-    Right: bool
+    w: bool,
+    a: bool,
+    s: bool,
+    d: bool,
+    shift: bool,
+    space: bool,
+    ctrl: bool,
+    up: bool,
+    left: bool,
+    down: bool,
+    right: bool
 }
 
 impl KeyPresses {
     fn new() -> Self {
         Self {
-            W: false,
-            A: false,
-            S: false,
-            D: false,
-            Shift: false,
-            Space: false,
-            Ctrl: false,
-            Up: false,
-            Left: false,
-            Down: false,
-            Right: false
+            w: false,
+            a: false,
+            s: false,
+            d: false,
+            shift: false,
+            space: false,
+            ctrl: false,
+            up: false,
+            left: false,
+            down: false,
+            right: false
         }
     }
 }
@@ -95,8 +89,8 @@ struct App {
 
     use_worldgen: bool,
     worldgen_chunks: HashMap<V3i, Chunk>,
-    seed: u32,
-    block_colors: worldgen::BlockColors,
+    _seed: u32,
+    _block_colors: worldgen::BlockColors,
     world_changed: bool,
      
     // Multithreading fields
@@ -309,43 +303,43 @@ impl ApplicationHandler<CliCommand> for App {
                 let rot_speed = std::f32::consts::FRAC_PI_2 * 1.5;
                 self.last_redraw = Instant::now();
                 // Shift
-                if self.key_presses.Shift {
+                if self.key_presses.shift {
                     move_speed *= 10.0;
                 }
 
                 // WASD movement
-                if self.key_presses.W {
+                if self.key_presses.w {
                     self.player.move_in_direction(Direction::Forward, move_speed * delta_time);
                 }
-                if self.key_presses.A {
+                if self.key_presses.a {
                     self.player.move_in_direction(Direction::Left, move_speed * delta_time);
                 }
-                if self.key_presses.S {
+                if self.key_presses.s {
                     self.player.move_in_direction(Direction::Back, move_speed * delta_time);
                 }
-                if self.key_presses.D {
+                if self.key_presses.d {
                     self.player.move_in_direction(Direction::Right, move_speed * delta_time);
                 }
 
                 // Up / Down
-                if self.key_presses.Space {
+                if self.key_presses.space {
                     self.player.move_up(move_speed * delta_time);
                 }
-                if self.key_presses.Ctrl {
+                if self.key_presses.ctrl {
                     self.player.move_down(move_speed * delta_time);
                 }
 
 
-                if self.key_presses.Up {
+                if self.key_presses.up {
                     self.player.rotate_pitch(rot_speed * delta_time);
                 }
-                if self.key_presses.Down {
+                if self.key_presses.down {
                     self.player.rotate_pitch(-rot_speed * delta_time);
                 }
-                if self.key_presses.Left {
+                if self.key_presses.left {
                     self.player.rotate_yaw(-rot_speed * delta_time);
                 }
-                if self.key_presses.Right {
+                if self.key_presses.right {
                     self.player.rotate_yaw(rot_speed * delta_time);
                 }
                 //=============================
@@ -394,43 +388,43 @@ impl ApplicationHandler<CliCommand> for App {
                 match key_code {
                     // WASD
                     winit::keyboard::KeyCode::KeyW => {
-                        self.key_presses.W = state;
+                        self.key_presses.w = state;
                     }
                     winit::keyboard::KeyCode::KeyA => {
-                        self.key_presses.A = state;
+                        self.key_presses.a = state;
                     }
                     winit::keyboard::KeyCode::KeyS => {
-                        self.key_presses.S = state;
+                        self.key_presses.s = state;
                     }
                     winit::keyboard::KeyCode::KeyD => {
-                        self.key_presses.D = state;
+                        self.key_presses.d = state;
                     }
 
                     // Space
                     winit::keyboard::KeyCode::Space => {
-                        self.key_presses.Space = state;
+                        self.key_presses.space = state;
                     }
                     
                     // Modifiers
                     winit::keyboard::KeyCode::ShiftLeft => {
-                        self.key_presses.Shift = state;
+                        self.key_presses.shift = state;
                     }
                     winit::keyboard::KeyCode::ControlLeft => {
-                        self.key_presses.Ctrl = state;
+                        self.key_presses.ctrl = state;
                     }
 
                     // Arrow keys
                     winit::keyboard::KeyCode::ArrowUp => {
-                        self.key_presses.Up = state;
+                        self.key_presses.up = state;
                     }
                     winit::keyboard::KeyCode::ArrowLeft => {
-                        self.key_presses.Left = state;
+                        self.key_presses.left = state;
                     }
                     winit::keyboard::KeyCode::ArrowDown => {
-                        self.key_presses.Down = state;
+                        self.key_presses.down = state;
                     }
                     winit::keyboard::KeyCode::ArrowRight => {
-                        self.key_presses.Right = state;
+                        self.key_presses.right = state;
                     }
                     _ => {}
                 }
@@ -540,9 +534,9 @@ fn main() {
         key_presses: KeyPresses::new(),
         last_redraw: Instant::now(),
         worldgen_chunks: HashMap::new(),
-        seed: 1227,
+        _seed: 1227,
         use_worldgen: false,
-        block_colors: worldgen::BlockColors { grass: 3, stone: 2, water: 4 },
+        _block_colors: worldgen::BlockColors { grass: 3, stone: 2, water: 4 },
         chunk_req_tx: req_tx,
         chunk_res_rx: res_rx,
         generating_chunks: HashSet::new(),

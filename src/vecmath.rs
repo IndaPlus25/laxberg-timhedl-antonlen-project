@@ -21,8 +21,8 @@ pub struct Ray {
 }
 
 pub struct IntersectionData {
-    pub ray: Ray,
-    pub voxel_data: u32,
+    pub _ray: Ray,
+    pub _voxel_data: u32,
 }
 
 #[inline(always)]
