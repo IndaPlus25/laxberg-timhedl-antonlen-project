@@ -232,6 +232,16 @@ impl ApplicationHandler<CliCommand> for App {
                 // Worldgen:
                 let player_center = self.player.position;
                 let radius = self.render_distance as i32;
+
+                // Keep the chunks within the render distance, and remove the other
+                self.worldgen_chunks.retain(|key, _| {
+                    let dx = (key.x - ((player_center.x / 32.0) as i32)).abs() as u32;
+                    let dy = (key.y - ((player_center.y / 32.0) as i32)).abs() as u32;
+                    let dz = (key.z - ((player_center.z / 32.0) as i32)).abs() as u32;
+
+                    dx <= self.render_distance && dy <= self.render_distance && dz <= self.render_distance
+                });
+                
                 for y in 0..=5{
                     for x in (((player_center.x / 32.0) as i32) - radius)..=(((player_center.x / 32.0) as i32) + radius) {
                         for z in (((player_center.z / 32.0) as i32) - radius)..=(((player_center.z / 32.0) as i32) + radius) {
