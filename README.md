@@ -1,9 +1,9 @@
-# 🧊 Project Voxin 
+# Project Voxin 
 *By Google 2*
 
 A GPU-accelerated, raytraced voxel engine written in Rust and WGPU. Project Voxin features the ability to convert standard 3D models (`.glb` / `.obj`) into voxel environments in real-time, rendering them with advanced compute shaders and storing them in an ultra-optimized, bit-packed format.
 
-## Meet the Team
+## Developers
 
 | Name | Links |
 | :--- | :--- |
@@ -12,6 +12,14 @@ A GPU-accelerated, raytraced voxel engine written in Rust and WGPU. Project Voxi
 | **Anton Lennström** | [LinkedIn](https://www.linkedin.com/in/anton-lennstr%C3%B6m/) • [Email](mailto:antonlen@kth.se) |
 
 ---
+
+## Showcase
+
+![alt text](https://github.com/IndaPlus25/laxberg-timhedl-antonlen-project/showcase-images/A-Castles-Story.png) 
+
+![alt text](https://github.com/IndaPlus25/laxberg-timhedl-antonlen-project/showcase-images/Combining-Models.png) 
+
+![alt text](https://github.com/IndaPlus25/laxberg-timhedl-antonlen-project/showcase-images/Stunning-Landscape.png) 
 
 ## Features
 
