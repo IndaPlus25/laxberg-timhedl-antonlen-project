@@ -94,9 +94,31 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
             reset_and_upload_world(app);
         }
         CliCommand::Save(path) => {
-            let data = &app.chunks;
+            // 1. Combine parsed chunks and worldgen chunks so generated terrain is saved!
+            let mut combined_chunks: std::collections::HashMap<crate::vecmath::V3i, crate::octree::Chunk> = std::collections::HashMap::new();
+
+            for (key, chunk) in &app.chunks {
+                combined_chunks.insert(*key, crate::octree::Chunk {
+                    data: chunk.data.clone(),
+                    min_pos: chunk.min_pos,
+                    max_pos: chunk.max_pos,
+                });
+            }
+
+            for (key, chunk) in &app.worldgen_chunks {
+                if let Some(existing) = combined_chunks.get_mut(key) {
+                    existing.add_chunk(chunk);
+                } else {
+                    combined_chunks.insert(*key, crate::octree::Chunk {
+                        data: chunk.data.clone(),
+                        min_pos: chunk.min_pos,
+                        max_pos: chunk.max_pos,
+                    });
+                }
+            }
+
             let colors = &app.colours;
-            match save_file_interface(&path, data, colors) {
+            match save_file_interface(&path, &combined_chunks, colors) {
                 Ok(_) => println!("Successfully saved data"),
                 Err(e) => println!("{}, please try again", e),
             }
@@ -114,10 +136,18 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
                             app.chunks.insert(key, value);
                         }
                     }
-                  
-                    //viktigt med färger, Alpha = reflectivity
-                    app.colours = colors;
-                  
+      
+                    // 2. Merge colors safely instead of completely overwriting them.
+                    // This ensures any existing parsed models keep their colors 
+                    // if the loaded file has fewer colors than your current world.
+                    for (i, color) in colors.into_iter().enumerate() {
+                        if i < app.colours.len() {
+                            app.colours[i] = color;
+                        } else {
+                            app.colours.push(color);
+                        }
+                    }
+      
                     reset_and_upload_world(app);
 
                 },
