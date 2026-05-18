@@ -530,8 +530,6 @@ impl GlbParser {
 
             let color = PaletteManager::get_color_from_position(&rgba_image, (u_wrapped, v_wrapped), false);
 
-            println!("{:?}", color);
-
             self.palette_manager.add_color(color.clone());
             color_id = self.palette_manager.get_index_from_color(color).copied();
 
@@ -539,8 +537,6 @@ impl GlbParser {
                 break;
             }
         }
-
-        println!("{:?}", color_id);
 
         color_id.unwrap_or(1)
     }
