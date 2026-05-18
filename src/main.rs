@@ -36,6 +36,9 @@ use crate::cli::*;
 use crate::worldgen::generate_random_world;
 
 const DEFAULT_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 0.0];
+const STONE_COLOR: [f32; 4] = [136./255., 140./255., 141./255., 0.0];
+const GRASS_COLOR: [f32; 4] = [94./255., 157./255., 82./255., 0.0];
+const WATER_COLOR: [f32; 4] = [63./255., 118./255., 228./255., 0.6];
 
 pub struct Player {
     pub position: V3,
@@ -89,6 +92,7 @@ struct App {
     use_worldgen: bool,
     worldgen_chunks: HashMap<V3i, Chunk>,
     seed: u32,
+    block_colors: worldgen::BlockColors,
 
     player: Player,
     render_distance: u32,
@@ -263,8 +267,7 @@ impl ApplicationHandler<CliCommand> for App {
                                 };
 
                                 // Create chunks
-                                let colors = worldgen::BlockColors { grass: 1, stone: 1, water: 1 };
-                                let chunk_data = worldgen::generate_single_chunk(&colors, self.seed, &pos);
+                                let chunk_data = worldgen::generate_single_chunk(&self.block_colors, self.seed, &pos);
                                 let data = build_chunk(&chunk_data);
                                 let chunk = Chunk { data, min_pos: V3 { x: 0.0, y: 0.0, z: 0.0 }, max_pos: V3 { x: 32.0, y: 32.0, z: 32.0 }};
 
@@ -442,7 +445,7 @@ fn main() {
     });
 
     let chunks = HashMap::new();
-    let colours = vec![DEFAULT_COLOR, DEFAULT_COLOR];
+    let colours = vec![DEFAULT_COLOR, DEFAULT_COLOR, STONE_COLOR, GRASS_COLOR, WATER_COLOR];
     let player = Player {
         position: V3{
             x: 32.0*2.0,
@@ -478,6 +481,7 @@ fn main() {
         worldgen_chunks: HashMap::new(),
         seed: 1227,
         use_worldgen: false,
+        block_colors: worldgen::BlockColors { grass: 3, stone: 2, water: 4 }
 
     };
 
