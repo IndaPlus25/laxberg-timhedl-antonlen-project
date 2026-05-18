@@ -6,6 +6,7 @@ struct Camera {
     position: vec3<f32>,
     render_distance: u32,
     top_left: vec3<f32>,
+    grid_size: u32,
     delta_x: vec3<f32>,
     delta_y: vec3<f32>,
 }
@@ -414,7 +415,7 @@ fn expand_bits(v: u32) -> u32 {
     return x;
 }
 
-fn get_chunk_root_pointer(chunk_pos: vec3<i32>, render_radius: i32, render_diameter: i32) -> u32 {
+fn get_chunk_root_pointer(chunk_pos: vec3<i32>, render_radius: i32, grid_size: i32) -> u32 {
     let cam_chunk = vec3<i32>(floor(camera.position / 32.0));
     let dist_x = abs(chunk_pos.x - cam_chunk.x);
     let dist_y = abs(chunk_pos.y - cam_chunk.y);
@@ -424,10 +425,10 @@ fn get_chunk_root_pointer(chunk_pos: vec3<i32>, render_radius: i32, render_diame
         return 0xFFFFFFFFu; 
     }
 
-    var local_pos = chunk_pos % vec3<i32>(render_diameter);
-    if (local_pos.x < 0) { local_pos.x += render_diameter; }
-    if (local_pos.y < 0) { local_pos.y += render_diameter; }
-    if (local_pos.z < 0) { local_pos.z += render_diameter; }
+    var local_pos = chunk_pos % vec3<i32>(grid_size);
+    if (local_pos.x < 0) { local_pos.x += grid_size; }
+    if (local_pos.y < 0) { local_pos.y += grid_size; }
+    if (local_pos.z < 0) { local_pos.z += grid_size; }
     
     let morton_x = expand_bits(u32(local_pos.x));
     let morton_y = expand_bits(u32(local_pos.y));
@@ -438,7 +439,7 @@ fn get_chunk_root_pointer(chunk_pos: vec3<i32>, render_radius: i32, render_diame
     return world_data[grid_index];
 }
 
-fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: ptr<function, u32>, out_pos: ptr<function, vec3<f32>>, out_normal: ptr<function, vec3<f32>>, render_radius: i32, render_diameter: i32) -> bool {
+fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: ptr<function, u32>, out_pos: ptr<function, vec3<f32>>, out_normal: ptr<function, vec3<f32>>, render_radius: i32, grid_size: i32) -> bool {
     let chunk_size = 32.0;
     var chunk_pos = vec3<i32>(floor(origin / chunk_size));
     
@@ -484,7 +485,7 @@ fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: pt
 
     // DDA LOOPEN
     for (var i = 0u; i < limit; i++) {
-        let chunk_root_ptr = get_chunk_root_pointer(chunk_pos, render_radius, render_diameter);
+        let chunk_root_ptr = get_chunk_root_pointer(chunk_pos, render_radius, grid_size);
         
         if (chunk_root_ptr != 0xFFFFFFFFu) {
             let chunk_min = vec3<f32>(chunk_pos) * chunk_size;
@@ -508,7 +509,7 @@ fn cast_ray(origin: vec3<f32>, direction: vec3<f32>, limit: u32, out_payload: pt
     return false;
 }
 
-fn cast_ray_anyhit(origin: vec3<f32>, direction: vec3<f32>, limit: u32, render_radius: i32, render_diameter: i32) -> bool {
+fn cast_ray_anyhit(origin: vec3<f32>, direction: vec3<f32>, limit: u32, render_radius: i32, grid_size: i32) -> bool {
     let chunk_size = 32.0;
     var chunk_pos = vec3<i32>(floor(origin / chunk_size));
     
@@ -549,7 +550,7 @@ fn cast_ray_anyhit(origin: vec3<f32>, direction: vec3<f32>, limit: u32, render_r
     }
     
     for (var i = 0u; i < limit; i++) {
-        let chunk_root_ptr = get_chunk_root_pointer(chunk_pos, render_radius, render_diameter);
+        let chunk_root_ptr = get_chunk_root_pointer(chunk_pos, render_radius, grid_size);
         if (chunk_root_ptr != 0xFFFFFFFFu) {
             let chunk_min = vec3<f32>(chunk_pos) * chunk_size;
             let chunk_max = chunk_min + vec3<f32>(chunk_size);
@@ -577,9 +578,9 @@ fn cast_ray_anyhit(origin: vec3<f32>, direction: vec3<f32>, limit: u32, render_r
 fn is_voxel_solid(pos: vec3<f32>, render_radius: i32) -> bool {
     let chunk_size = 32.0;
     let chunk_pos = vec3<i32>(floor(pos / chunk_size));
-    let render_diameter = render_radius * 2;
+    let grid_size = i32(camera.grid_size);
 
-    let root_ptr = get_chunk_root_pointer(chunk_pos, render_radius, render_diameter);
+    let root_ptr = get_chunk_root_pointer(chunk_pos, render_radius, grid_size);
     if (root_ptr == 0xFFFFFFFFu) { return false; } // Chunk doesn't exist
 
     var current_node = world_data[root_ptr];
@@ -750,14 +751,14 @@ fn ray_gen_pass(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let ray_dir = camera.top_left + (camera.delta_x * x) + (camera.delta_y * y);
 
     let render_radius = i32(camera.render_distance);
-    let render_diameter = render_radius * 2;
-    let ray_dda_limit = u32(render_diameter);
+    let grid_size = i32(camera.grid_size);
+    let ray_dda_limit = u32(render_radius * 2);
 
     var payload: u32 = 0u;
     var hit_pos: vec3<f32> = vec3<f32>(0.0);
     var hit_normal: vec3<f32> = vec3<f32>(0.0);
 
-    let hit = cast_ray(camera.position, normalize(ray_dir), ray_dda_limit, &payload, &hit_pos, &hit_normal, render_radius, render_diameter);
+    let hit = cast_ray(camera.position, normalize(ray_dir), ray_dda_limit, &payload, &hit_pos, &hit_normal, render_radius, grid_size);
 
     let index = global_id.y * dimensions.x + global_id.x;
     hit_buffer[index] = HitData(hit_pos, u32(hit), hit_normal, payload);
@@ -780,23 +781,24 @@ fn shading_pass(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let ray_dir = normalize(camera.top_left + (camera.delta_x * x) + (camera.delta_y * y));
     let shadow_dir = normalize(lighting.sun_direction);
     let render_radius = i32(camera.render_distance);
-    let render_diameter = render_radius * 2;
+    let grid_size = i32(camera.grid_size);
 
     // Delegate all the heavy lifting to the radiance function
-    let final_rgb = shade(hit_info, ray_dir, shadow_dir, render_radius, render_diameter);
+    let final_rgb = shade(hit_info, ray_dir, shadow_dir, render_radius, grid_size);
 
     let monitor_rgb = pow(final_rgb, vec3<f32>(1.0 / 2.2));
 
     textureStore(screen_texture, global_id.xy, vec4<f32>(monitor_rgb, lighting.sky_color.a));
 }
 
-fn shade(initial_hit: HitData, initial_ray_dir: vec3<f32>, shadow_dir: vec3<f32>, render_radius: i32, render_diameter: i32) -> vec3<f32> {
+fn shade(initial_hit: HitData, initial_ray_dir: vec3<f32>, shadow_dir: vec3<f32>, render_radius: i32, grid_size: i32) -> vec3<f32> {
     
     var hit_info = initial_hit;
     var ray_dir = initial_ray_dir;
     var final_rgb = vec3<f32>(0.0);
     var ray_fraction = 1.0; 
     let reflection_limit = 3u;
+    let ray_limit = u32(render_radius * 2);
 
     // If the primary ray hit the sky, return sky color immediately
     if (hit_info.did_hit == 0u) {
@@ -824,7 +826,7 @@ fn shade(initial_hit: HitData, initial_ray_dir: vec3<f32>, shadow_dir: vec3<f32>
         
         if (dot_light > 0.0) {
             let shadow_origin = hit_info.hit_pos + (hit_info.hit_normal * 0.005);
-            let is_occluded = cast_ray_anyhit(shadow_origin, shadow_dir, u32(render_diameter), render_radius, render_diameter);
+            let is_occluded = cast_ray_anyhit(shadow_origin, shadow_dir, ray_limit, render_radius, grid_size);
             if (!is_occluded) {
                 direct_light = base_color;
             }
@@ -848,7 +850,7 @@ fn shade(initial_hit: HitData, initial_ray_dir: vec3<f32>, shadow_dir: vec3<f32>
         var next_pos: vec3<f32> = vec3<f32>(0.0);
         var next_normal: vec3<f32> = vec3<f32>(0.0);
 
-        let did_hit = cast_ray(next_origin, ray_dir, u32(render_diameter), &next_payload, &next_pos, &next_normal, render_radius, render_diameter);
+        let did_hit = cast_ray(next_origin, ray_dir, ray_limit, &next_payload, &next_pos, &next_normal, render_radius, grid_size);
 
         if (!did_hit) {
             let sky_multiplier = dot(ray_dir, shadow_dir) * 0.5 + 0.5;
