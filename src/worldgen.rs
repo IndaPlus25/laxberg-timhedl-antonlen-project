@@ -75,7 +75,7 @@ pub fn generate_single_chunk(colors: &BlockColors, seed: u32, chunk_coord: &V3i)
                 let index = dx + (dy * 32) + (dz * 32 * 32);
 
                 let global_y = chunk_coord.y * 32 + dy;
-                if 0 < global_y && global_y <= global_y_limit {
+                if 44 < global_y && global_y <= global_y_limit {
                     let color = if biome_noise > 0.2 {
                         colors.stone
                     } else {
@@ -84,7 +84,7 @@ pub fn generate_single_chunk(colors: &BlockColors, seed: u32, chunk_coord: &V3i)
                     flat_data[index as usize] = color;
                 }
 
-                if global_y <= 0 {
+                if global_y <= 44 {
                     flat_data[index as usize] = colors.water;
                 }
             }
