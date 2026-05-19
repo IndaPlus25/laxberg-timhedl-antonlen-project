@@ -461,6 +461,8 @@ fn main() {
         }
     });
 
+    print_help();
+
     let chunks = HashMap::new();
     let colours = vec![DEFAULT_COLOR, DEFAULT_COLOR, STONE_COLOR, GRASS_COLOR, WATER_COLOR];
     let player = Player {
