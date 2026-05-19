@@ -67,14 +67,14 @@ pub struct ChunkAllocation {
 
 pub struct VoxelHeapAllocator {
     pub free_blocks: Vec<(u32, u32)>, 
-    pub capacity: u32,
+    pub _capacity: u32,
 }
 
 impl VoxelHeapAllocator {
-    pub fn new(start_offset: u32, capacity: u32) -> Self {
+    pub fn new(start_offset: u32, _capacity: u32) -> Self {
         Self {
-            free_blocks: vec![(start_offset, capacity - start_offset)],
-            capacity,
+            free_blocks: vec![(start_offset, _capacity - start_offset)],
+            _capacity,
         }
     }
 
@@ -102,7 +102,7 @@ impl VoxelHeapAllocator {
 }
 
 impl State {
-    pub async fn new(display: OwnedDisplayHandle, window: Arc<Window>, gpu_world_data: &[u32], render_distance: u32, desired_heap_bytes: u64) -> State {
+    pub async fn new(display: OwnedDisplayHandle, window: Arc<Window>, _gpu_world_data: &[u32], render_distance: u32, desired_heap_bytes: u64) -> State {
         let mut descriptor = wgpu::InstanceDescriptor::new_with_display_handle(Box::new(display));
         descriptor.backends = wgpu::Backends::VULKAN;
         descriptor.flags |= wgpu::InstanceFlags::DEBUG;

@@ -1,5 +1,4 @@
 use std::fmt;
-use bincode::Error;
 
 #[derive(Debug)]
 pub enum FileParseError{

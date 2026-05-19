@@ -93,7 +93,7 @@ pub fn generate_single_chunk(colors: &BlockColors, seed: u32, chunk_coord: &V3i)
     flat_data
 }
 
-pub fn generate_random_world(width: usize, height: usize, depth: usize, density: f64, max_material: u32) -> Vec<Vec<Vec<u32>>> {
+pub fn _generate_random_world(width: usize, height: usize, depth: usize, density: f64, max_material: u32) -> Vec<Vec<Vec<u32>>> {
 
     let mut world = vec![vec![vec![0; depth]; height]; width];
     

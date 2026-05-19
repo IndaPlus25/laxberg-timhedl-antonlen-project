@@ -3,12 +3,12 @@ use rayon::prelude::*;
 use crate::vecmath::*;
 use crate::octree::*;
 
-pub struct Player {
+pub struct _Player {
     pub position: V3,
     pub direction: (f32, f32),
 }
 
-pub fn default_color(buffer: &mut [u32], width: u32, height: u32) {
+pub fn _default_color(buffer: &mut [u32], width: u32, height: u32) {
     for (index, pixel) in buffer.iter_mut().enumerate() {
         let x = (index % width as usize) as f32;
         let y = (index / width as usize) as f32;
@@ -55,7 +55,7 @@ pub fn render_starter(width: u32, height: u32, fov: f32, direction: (f32, f32)) 
 
 }
 
-pub fn cpu_raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, player: &Player, chunks: &HashMap<V3i, Chunk>) {
+pub fn _cpu_raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, player: &_Player, chunks: &HashMap<V3i, Chunk>) {
 
     let aspect_ratio = width as f32/height as f32;
 
@@ -100,7 +100,7 @@ pub fn cpu_raycaster(buffer: &mut [u32], width: u32, height: u32, fov: f32, play
         let intersection = cast_ray(&ray, chunks, 32);
 
         if let Some(hit) = intersection {
-            let b = get_ending(hit.voxel_data);
+            let b = get_ending(hit._voxel_data);
             *pixel = match b {
                 1 => 0xFF0000, // Red
                 2 => 0x00FF00, // Green

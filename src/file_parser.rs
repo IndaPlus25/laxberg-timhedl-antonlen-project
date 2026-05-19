@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Error, ErrorKind, Read};
+use std::io::{BufRead, BufReader, Error, Read};
 use std::path::{Path, PathBuf};
 use gltf::buffer::Data;
 use gltf::image::Format;
 use image::{DynamicImage, RgbImage, RgbaImage};
-use gltf::{Gltf, Primitive};
-use glam::{Mat4, Vec3};
+use gltf::Primitive;
+use glam::Mat4;
 
 const DEFAULT_COLOR: Vertex = Vertex {x: 1.0, y: 1.0, z: 1.0, u: 0.0, v: 0.0};
 
@@ -530,8 +530,6 @@ impl GlbParser {
 
             let color = PaletteManager::get_color_from_position(&rgba_image, (u_wrapped, v_wrapped), false);
 
-            println!("{:?}", color);
-
             self.palette_manager.add_color(color.clone());
             color_id = self.palette_manager.get_index_from_color(color).copied();
 
@@ -539,8 +537,6 @@ impl GlbParser {
                 break;
             }
         }
-
-        println!("{:?}", color_id);
 
         color_id.unwrap_or(1)
     }
@@ -583,7 +579,7 @@ impl GlbParser {
 }
 
 impl FileFormat for GlbParser {
-    fn handle_input(&mut self, reader: &mut BufReader<File>, folder: Option<&Path>) -> Result<Mesh, FileParseError> {
+    fn handle_input(&mut self, reader: &mut BufReader<File>, _folder: Option<&Path>) -> Result<Mesh, FileParseError> {
         let (document, buffers, images) = GlbParser::parse_glb(reader)?;
         
         let mut rgb_images: Vec<RgbaImage> = Vec::new(); 
@@ -669,6 +665,7 @@ pub fn file_parse_interface(filename: &str) -> Result<Mesh, FileParseError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::ErrorKind;
 
     #[test]
     fn verticies_finding_test(){
