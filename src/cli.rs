@@ -233,7 +233,7 @@ pub fn execute_cli_commands(app: &mut App, event_loop: &ActiveEventLoop, cmd: Cl
     }
 }
 
-fn print_help() {
+pub fn print_help() {
     println!(r#"
 ============================================================
                       RAYCASTER HELP
